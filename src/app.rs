@@ -47,6 +47,10 @@ const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_millis(450);
 pub static SCROLL_ID: std::sync::LazyLock<cosmic::widget::Id> =
     std::sync::LazyLock::new(|| cosmic::widget::Id::new("transferencia-list"));
 
+/// Id do painel de prévia, para rolar com PageUp/PageDown.
+pub static PREVIEW_ID: std::sync::LazyLock<cosmic::widget::Id> =
+    std::sync::LazyLock::new(|| cosmic::widget::Id::new("transferencia-preview"));
+
 /// O que fazer ao subir/ativar a instância.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
@@ -109,6 +113,8 @@ pub enum Message {
     TogglePinFocused,
     FocusNext,
     FocusPrevious,
+    /// Rola o painel de prévia (PageUp/PageDown).
+    ScrollPreview(f32),
     Resized(cosmic::iced::Size),
     Hide,
     Layer(LayerEvent, SurfaceId),
@@ -493,6 +499,16 @@ impl cosmic::Application for App {
             Message::TogglePinFocused => self.toggle_pin_focused(),
             Message::FocusNext => self.focus(1),
             Message::FocusPrevious => self.focus(-1),
+            Message::ScrollPreview(direction) => {
+                let step = self.cfg.popup_height * 0.8;
+                cosmic::iced::widget::scrollable::scroll_by(
+                    PREVIEW_ID.clone(),
+                    cosmic::iced::widget::scrollable::AbsoluteOffset {
+                        x: 0.0,
+                        y: step * direction,
+                    },
+                )
+            }
             Message::Resized(size) => {
                 self.surface_size = Some(size);
                 self.blur_panel()
@@ -582,6 +598,8 @@ impl cosmic::Application for App {
                 Key::Named(Named::Enter) => Some(Message::ActivateFocused {
                     plain: modifiers.shift(),
                 }),
+                Key::Named(Named::PageUp) => Some(Message::ScrollPreview(-1.0)),
+                Key::Named(Named::PageDown) => Some(Message::ScrollPreview(1.0)),
                 Key::Named(Named::Escape) => Some(Message::Hide),
                 Key::Named(Named::Delete) => Some(Message::RemoveFocused),
                 Key::Named(Named::Tab) => Some(Message::FocusNext),

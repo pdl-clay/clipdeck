@@ -32,7 +32,9 @@ const KEY_RETURN: u32 = 28;
 const KEY_LEFTCTRL: u32 = 29;
 const KEY_V: u32 = 47;
 const KEY_UP: u32 = 103;
+const KEY_PAGEUP: u32 = 104;
 const KEY_DOWN: u32 = 108;
+const KEY_PAGEDOWN: u32 = 109;
 const KEY_DELETE: u32 = 111;
 const KEY_LEFTMETA: u32 = 125;
 
@@ -58,6 +60,8 @@ pub enum Key {
     V,
     Up,
     Down,
+    PageUp,
+    PageDown,
     Return,
     Escape,
     Delete,
@@ -70,6 +74,8 @@ impl Key {
             Key::V => KEY_V,
             Key::Up => KEY_UP,
             Key::Down => KEY_DOWN,
+            Key::PageUp => KEY_PAGEUP,
+            Key::PageDown => KEY_PAGEDOWN,
             Key::Return => KEY_RETURN,
             Key::Escape => KEY_ESCAPE,
             Key::Delete => KEY_DELETE,
@@ -105,6 +111,8 @@ impl Display for Combo {
             Key::V => "v",
             Key::Up => "up",
             Key::Down => "down",
+            Key::PageUp => "pageup",
+            Key::PageDown => "pagedown",
             Key::Return => "enter",
             Key::Escape => "escape",
             Key::Delete => "delete",
@@ -133,6 +141,8 @@ impl FromStr for Combo {
             "v" => Key::V,
             "up" => Key::Up,
             "down" => Key::Down,
+            "pageup" | "pgup" => Key::PageUp,
+            "pagedown" | "pgdn" | "pgdown" => Key::PageDown,
             "enter" | "return" => Key::Return,
             "escape" | "esc" => Key::Escape,
             "delete" | "del" => Key::Delete,
@@ -345,6 +355,20 @@ mod tests {
             Combo {
                 modifier: None,
                 key: Key::Down
+            }
+        );
+        assert_eq!(
+            combo("pgdn"),
+            Combo {
+                modifier: None,
+                key: Key::PageDown
+            }
+        );
+        assert_eq!(
+            combo("PageUp"),
+            Combo {
+                modifier: None,
+                key: Key::PageUp
             }
         );
         assert_eq!(

@@ -6,12 +6,23 @@ use cosmic::theme;
 use cosmic::widget::space::vertical as vertical_space;
 use cosmic::widget::{Column, container, divider, image, mouse_area, scrollable, text, text_input};
 
-use crate::app::{Message, SCROLL_ID};
+use crate::app::{Message, PREVIEW_ID, SCROLL_ID};
 use crate::db::{Item, Kind};
 use crate::util::{human_age, human_bytes};
 
-/// Limite de caracteres mostrados na prévia de texto.
-const PREVIEW_TEXT_CHARS: usize = 4000;
+/// Teto de caracteres renderizados na prévia de texto. O item pode ser bem maior
+/// (até `max_text_bytes`); acima disso a prévia avisa quanto ficou de fora.
+const PREVIEW_TEXT_CHARS: usize = 60_000;
+
+/// Cópia descartável da prévia de texto: devolve o trecho a renderizar e, quando
+/// cortado, o total de caracteres do item.
+fn preview_text(text: &str) -> (String, Option<usize>) {
+    let total = text.chars().count();
+    if total <= PREVIEW_TEXT_CHARS {
+        return (text.to_string(), None);
+    }
+    (text.chars().take(PREVIEW_TEXT_CHARS).collect(), Some(total))
+}
 
 /// Conteúdo da janela do popup: lista à esquerda e prévia à direita.
 pub fn popup<'a>(
@@ -144,10 +155,27 @@ fn preview_pane<'a>(item: Option<&'a Item>, preview: Option<&'a image::Handle>) 
             if text.is_empty() {
                 text::caption("(sem texto)").into()
             } else {
-                let shown: String = text.chars().take(PREVIEW_TEXT_CHARS).collect();
-                scrollable(container(text::monotext(shown)).padding([0, 4]).width(Length::Fill))
-                    .height(Length::Fill)
-                    .into()
+                let (shown, truncated) = preview_text(text);
+                let scroller = scrollable(
+                    container(text::monotext(shown))
+                        .padding([0, 4])
+                        .width(Length::Fill),
+                )
+                .id(PREVIEW_ID.clone())
+                .height(Length::Fill);
+
+                match truncated {
+                    None => scroller.into(),
+                    Some(total) => Column::with_children(vec![
+                        scroller.into(),
+                        text::caption(format!(
+                            "mostrando {PREVIEW_TEXT_CHARS} de {total} caracteres"
+                        ))
+                        .into(),
+                    ])
+                    .spacing(4)
+                    .into(),
+                }
             }
         }
     };
@@ -259,5 +287,34 @@ fn badge(item: &Item) -> &'static str {
         Kind::Html => "html",
         Kind::Image => "imagem",
         Kind::Files => "arquivo",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preview_text_mostra_texto_curto_inteiro() {
+        let (shown, truncated) = preview_text("linha um\nlinha dois");
+        assert_eq!(shown, "linha um\nlinha dois");
+        assert_eq!(truncated, None);
+    }
+
+    #[test]
+    fn preview_text_corta_e_informa_o_total() {
+        let grande = "á".repeat(PREVIEW_TEXT_CHARS + 1234);
+        let (shown, truncated) = preview_text(&grande);
+        assert_eq!(shown.chars().count(), PREVIEW_TEXT_CHARS);
+        assert_eq!(truncated, Some(PREVIEW_TEXT_CHARS + 1234));
+    }
+
+    #[test]
+    fn preview_text_conta_caracteres_e_nao_bytes() {
+        // 3 caracteres acentuados ocupam 6 bytes: o corte é por caractere.
+        let texto = "áéí";
+        let (shown, truncated) = preview_text(texto);
+        assert_eq!(shown, texto);
+        assert_eq!(truncated, None);
     }
 }

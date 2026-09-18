@@ -44,10 +44,13 @@ tecla `Super+V`.
 | `Shift+Enter` | cola como texto puro (útil para itens HTML) |
 | `Ctrl+P` | fixa/desfixa (itens fixados não saem pelo limite) |
 | `Delete` | remove o item |
+| `PageUp` `PageDown` | rolam o painel de prévia (textos grandes) |
 | `Esc` | fecha |
 
 O painel direito mostra a prévia do item selecionado: imagens em tamanho grande,
-texto/arquivos como conteúdo. A prévia acompanha as setas do teclado.
+texto/arquivos como conteúdo. A prévia acompanha as setas do teclado. Textos
+longos rolam com a roda do mouse, com a barra de rolagem ou com `PageUp`/`PageDown`
+(até 60 000 caracteres renderizados; acima disso o painel avisa quanto ficou fora).
 
 ## CLI
 

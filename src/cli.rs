@@ -110,7 +110,7 @@ pub enum Command {
     },
     /// Envia uma combinação de teclas para a janela em foco (sem mudar o foco)
     Key {
-        /// `ctrl+v`, `super+v`, `up`, `down`, `enter`, `escape`, `delete`, `tab`
+        /// `ctrl+v`, `super+v`, `up`, `down`, `pageup`, `pagedown`, `enter`, `escape`, `delete`, `tab`
         combo: String,
     },
     /// Diagnóstico das dependências e da integração com o COSMIC
