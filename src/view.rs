@@ -8,12 +8,16 @@ use cosmic::widget::{Column, container, divider, image, mouse_area, scrollable, 
 
 use crate::app::{Message, SCROLL_ID};
 use crate::db::{Item, Kind};
-use crate::util::human_age;
+use crate::util::{human_age, human_bytes};
 
-/// Conteúdo da janela do popup.
+/// Limite de caracteres mostrados na prévia de texto.
+const PREVIEW_TEXT_CHARS: usize = 4000;
+
+/// Conteúdo da janela do popup: lista à esquerda e prévia à direita.
 pub fn popup<'a>(
     items: &'a [Item],
     thumbs: &'a [Option<image::Handle>],
+    preview: Option<&'a image::Handle>,
     query: &'a str,
     focused: usize,
     status: Option<&'a str>,
@@ -56,23 +60,39 @@ pub fn popup<'a>(
     };
 
     let hint = status.map_or_else(
-        || "Enter cola · Shift+Enter texto puro · Ctrl+P fixa · Del remove · Esc fecha".to_string(),
+        || {
+            "1 clique prévia · 2 cliques cola · Enter cola · Ctrl+P fixa · Del remove · Esc fecha"
+                .to_string()
+        },
         ToString::to_string,
     );
     let footer = container(text::caption(hint))
         .padding([2, 8])
         .width(Length::Fill);
 
-    let body = Column::with_children(vec![
-        search.into(),
-        divider::horizontal::light().into(),
-        list,
-        footer.into(),
+    // Painel de prévia: proporcional, para caber em popups estreitos.
+    let pane_width = (width * 0.4).clamp(240.0, 420.0);
+    let list_area = Column::with_children(vec![search.into(), list])
+        .spacing(8)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
+    let pane = container(preview_pane(items.get(focused), preview))
+        .width(Length::Fixed(pane_width))
+        .height(Length::Fill);
+    let columns = cosmic::widget::row(vec![
+        list_area,
+        divider::vertical::light().into(),
+        pane.into(),
     ])
-    .spacing(8)
-    .padding(12)
-    .width(Length::Fill)
+    .spacing(12)
     .height(Length::Fill);
+
+    let body = Column::with_children(vec![columns.into(), footer.into()])
+        .spacing(8)
+        .padding(12)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     container(body)
         .width(Length::Fixed(width))
@@ -94,6 +114,55 @@ pub fn popup<'a>(
                 ..Default::default()
             }
         })))
+        .into()
+}
+
+/// Prévia do item selecionado: imagem grande, ou o conteúdo em texto.
+fn preview_pane<'a>(item: Option<&'a Item>, preview: Option<&'a image::Handle>) -> Element<'a, Message> {
+    let Some(item) = item else {
+        return container(text::caption("selecione um item"))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into();
+    };
+
+    let body: Element<'a, Message> = match (item.kind, preview) {
+        (Kind::Image, Some(handle)) => container(
+            image(handle.clone())
+                .content_fit(cosmic::iced::ContentFit::Contain)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into(),
+        (Kind::Image, None) => text::caption("(imagem sem prévia)").into(),
+        _ => {
+            let text = item.text.trim();
+            if text.is_empty() {
+                text::caption("(sem texto)").into()
+            } else {
+                let shown: String = text.chars().take(PREVIEW_TEXT_CHARS).collect();
+                scrollable(container(text::monotext(shown)).padding([0, 4]).width(Length::Fill))
+                    .height(Length::Fill)
+                    .into()
+            }
+        }
+    };
+
+    let caption = text::caption(format!(
+        "{} · {} · {}",
+        badge(item),
+        human_bytes(item.bytes),
+        human_age(item.created_at)
+    ));
+
+    Column::with_children(vec![body, caption.into()])
+        .spacing(8)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }
 
@@ -162,7 +231,7 @@ fn row<'a>(
     cosmic::widget::button::custom(cosmic::widget::row(content).spacing(8).align_y(Alignment::Center))
         .width(Length::Fill)
         .padding([6, 10])
-        .on_press(Message::ActivateIndex(index))
+        .on_press(Message::SelectIndex(index))
         .class(highlight)
         .into()
 }

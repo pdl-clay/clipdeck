@@ -40,6 +40,8 @@ use crate::watcher;
 
 /// Itens carregados por abertura do popup.
 const LIST_LIMIT: usize = 200;
+/// Intervalo para o segundo clique contar como duplo clique.
+const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_millis(450);
 
 /// Id da lista rolável, para manter o item focado visível.
 pub static SCROLL_ID: std::sync::LazyLock<cosmic::widget::Id> =
@@ -100,7 +102,8 @@ impl CosmicFlags for Flags {
 #[derive(Debug, Clone)]
 pub enum Message {
     InputChanged(String),
-    ActivateIndex(usize),
+    /// Um clique: seleciona e mostra a prévia (dois cliques colam).
+    SelectIndex(usize),
     ActivateFocused { plain: bool },
     RemoveFocused,
     TogglePinFocused,
@@ -117,6 +120,10 @@ pub struct App {
     db: Db,
     items: Vec<Item>,
     thumb_handles: Vec<Option<cosmic::widget::image::Handle>>,
+    /// Prévia do item selecionado: (id do item, imagem) — o par evita recarregar
+    /// a cada quadro e detecta quando a seleção mudou.
+    preview_handle: Option<(i64, Option<cosmic::widget::image::Handle>)>,
+    last_click: Option<(usize, std::time::Instant)>,
     query: String,
     focused: usize,
     window_id: SurfaceId,
@@ -171,6 +178,7 @@ impl App {
                 if self.focused >= self.items.len() {
                     self.focused = 0;
                 }
+                self.load_preview();
             }
             Err(err) => {
                 warn!("consultando o histórico: {err:#}");
@@ -263,6 +271,54 @@ impl App {
         if self.visible { self.hide() } else { self.show() }
     }
 
+    /// Um clique: seleciona (a prévia acompanha) sem colar.
+    fn select(&mut self, index: usize) -> Task<Message> {
+        if index >= self.items.len() {
+            return Task::none();
+        }
+        self.focused = index;
+        self.load_preview();
+        self.scroll_to_focused()
+    }
+
+    /// Carrega a prévia do item selecionado, se ainda não estiver em cache.
+    fn load_preview(&mut self) {
+        let Some(item) = self.items.get(self.focused) else {
+            self.preview_handle = None;
+            return;
+        };
+        let id = item.id;
+        if matches!(&self.preview_handle, Some((cached, _)) if *cached == id) {
+            return;
+        }
+        let handle = match self.db.preview_of(id) {
+            Ok(Some(bytes)) => Some(cosmic::widget::image::Handle::from_bytes(bytes)),
+            Ok(None) => None,
+            Err(err) => {
+                warn!("lendo a prévia do item {id}: {err:#}");
+                None
+            }
+        };
+        self.preview_handle = Some((id, handle));
+    }
+
+    /// Clique numa linha: primeiro seleciona, o segundo (dentro do intervalo)
+    /// cola.
+    fn clicked(&mut self, index: usize) -> Task<Message> {
+        let now = std::time::Instant::now();
+        let double = self
+            .last_click
+            .is_some_and(|(previous, at)| previous == index && now.duration_since(at) < DOUBLE_CLICK);
+        self.last_click = Some((index, now));
+        if double {
+            tracing::debug!("duplo clique: colando o item {index}");
+            self.activate(index, false)
+        } else {
+            tracing::debug!("clique: selecionando o item {index}");
+            self.select(index)
+        }
+    }
+
     fn activate(&mut self, index: usize, plain: bool) -> Task<Message> {
         let started = std::time::Instant::now();
         let Some(item) = self.items.get(index).cloned() else {
@@ -340,6 +396,7 @@ impl App {
         }
         let len = self.items.len() as isize;
         self.focused = ((self.focused as isize + delta).rem_euclid(len)) as usize;
+        self.load_preview();
         self.scroll_to_focused()
     }
 
@@ -377,6 +434,10 @@ impl cosmic::Application for App {
                     warn!("captura indisponível: {err:#}");
                     status = Some(format!("captura indisponível: {err}"));
                 }
+                // Imagens antigas ganham prévia sem travar a abertura do popup.
+                if let Ok(backfill_db) = Db::open(&crate::config::db_path()) {
+                    watcher::backfill_previews(backfill_db);
+                }
             }
             Err(err) => {
                 warn!("captura indisponível: {err:#}");
@@ -390,6 +451,8 @@ impl cosmic::Application for App {
             db,
             items: Vec::new(),
             thumb_handles: Vec::new(),
+            preview_handle: None,
+            last_click: None,
             query: String::new(),
             focused: 0,
             window_id: SurfaceId::unique(),
@@ -424,7 +487,7 @@ impl cosmic::Application for App {
                 self.refresh();
                 self.scroll_to_focused()
             }
-            Message::ActivateIndex(index) => self.activate(index, false),
+            Message::SelectIndex(index) => self.clicked(index),
             Message::ActivateFocused { plain } => self.activate(self.focused, plain),
             Message::RemoveFocused => self.remove_focused(),
             Message::TogglePinFocused => self.toggle_pin_focused(),
@@ -483,6 +546,7 @@ impl cosmic::Application for App {
             return view::overlay(view::popup(
                 &self.items,
                 &self.thumb_handles,
+                self.preview_handle.as_ref().and_then(|(_, handle)| handle.as_ref()),
                 &self.query,
                 self.focused,
                 self.status.as_deref(),

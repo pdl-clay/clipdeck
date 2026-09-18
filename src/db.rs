@@ -51,6 +51,8 @@ pub struct Captured {
     pub html: Option<String>,
     pub bytes: Vec<u8>,
     pub thumb: Option<Vec<u8>>,
+    /// Prévia maior (1024px) para o painel de prévia do popup.
+    pub preview: Option<Vec<u8>>,
     pub sha256: String,
 }
 
@@ -148,6 +150,7 @@ CREATE TABLE IF NOT EXISTS items (
   html       TEXT,
   blob       BLOB,
   thumb      BLOB,
+  preview    BLOB,
   sha256     TEXT    NOT NULL UNIQUE,
   bytes      INTEGER NOT NULL,
   pinned     INTEGER NOT NULL DEFAULT 0,
@@ -199,7 +202,22 @@ impl Db {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         let db = Self { conn };
         db.conn.execute_batch(SCHEMA).context("criando schema")?;
+        // Bancos criados antes do painel de prévia não têm a coluna.
+        db.ensure_column("preview", "ALTER TABLE items ADD COLUMN preview BLOB")?;
         Ok(db)
+    }
+
+    fn ensure_column(&self, name: &str, alter: &str) -> Result<()> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('items') WHERE name = ?1",
+            params![name],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            tracing::info!("migrando banco: adicionando coluna {name}");
+            self.conn.execute(alter, [])?;
+        }
+        Ok(())
     }
 
     /// Insere um item novo ou, se o mesmo conteúdo já existe, sobe ele para o topo.
@@ -225,8 +243,8 @@ impl Db {
             None => {
                 let created_at = next_timestamp(&tx)?;
                 tx.execute(
-                    "INSERT INTO items (kind, mime, text, html, blob, thumb, sha256, bytes, pinned, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
+                    "INSERT INTO items (kind, mime, text, html, blob, thumb, preview, sha256, bytes, pinned, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)",
                     params![
                         item.kind.as_str(),
                         item.mime,
@@ -234,6 +252,7 @@ impl Db {
                         item.html,
                         item.bytes,
                         item.thumb,
+                        item.preview,
                         item.sha256,
                         item.bytes.len() as i64,
                         created_at,
@@ -287,6 +306,53 @@ impl Db {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+
+    /// Só os bytes da prévia (com a miniatura como reserva): leitura barata para
+    /// atualizar o painel de prévia sem arrastar o blob original.
+    pub fn preview_of(&self, id: i64) -> Result<Option<Vec<u8>>> {
+        let data: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(preview, thumb) FROM items WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, Option<Vec<u8>>>(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(data)
+    }
+
+    /// Imagens sem prévia (capturadas antes do painel de prévia existir).
+    pub fn images_without_preview(&self, limit: usize) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM items WHERE kind = 'image' AND preview IS NULL
+             ORDER BY created_at DESC LIMIT ?1",
+        )?;
+        let ids = stmt
+            .query_map(params![limit as i64], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<i64>>>()?;
+        Ok(ids)
+    }
+
+    pub fn blob_of(&self, id: i64) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT blob FROM items WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, Option<Vec<u8>>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    pub fn set_preview(&mut self, id: i64, preview: &[u8]) -> Result<bool> {
+        let changed = self.conn.execute(
+            "UPDATE items SET preview = ?1 WHERE id = ?2",
+            params![preview, id],
+        )?;
+        Ok(changed > 0)
     }
 
     pub fn set_pinned(&mut self, id: i64, pinned: bool) -> Result<bool> {
@@ -491,6 +557,7 @@ mod tests {
             html: None,
             bytes: text.as_bytes().to_vec(),
             thumb: None,
+            preview: None,
             sha256: format!("{:x}", hasher.finalize()),
         }
     }
@@ -503,8 +570,90 @@ mod tests {
             html: None,
             bytes: vec![0u8; bytes],
             thumb: Some(vec![1, 2, 3]),
+            preview: Some(vec![4, 5, 6]),
             sha256: sha.into(),
         }
+    }
+
+    #[test]
+    fn preview_of_prefere_a_previa_e_cai_na_miniatura() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = db(&dir);
+        let cfg = Config::default();
+
+        let id = db.upsert(&image("img-preview", 32), &cfg).unwrap().id();
+        assert_eq!(db.preview_of(id).unwrap(), Some(vec![4, 5, 6]));
+
+        let mut sem_previa = image("img-sem-previa", 32);
+        sem_previa.preview = None;
+        let outro = db.upsert(&sem_previa, &cfg).unwrap().id();
+        assert_eq!(
+            db.preview_of(outro).unwrap(),
+            Some(vec![1, 2, 3]),
+            "sem prévia, usa a miniatura"
+        );
+
+        assert_eq!(db.preview_of(9999).unwrap(), None);
+    }
+
+    #[test]
+    fn encontra_imagens_sem_previa_e_grava() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = db(&dir);
+        let cfg = Config::default();
+
+        let mut sem_previa = image("sem-previa", 16);
+        sem_previa.preview = None;
+        let id = db.upsert(&sem_previa, &cfg).unwrap().id();
+        db.upsert(&image("com-previa", 16), &cfg).unwrap();
+
+        assert_eq!(db.images_without_preview(10).unwrap(), vec![id]);
+        assert_eq!(db.blob_of(id).unwrap().unwrap().len(), 16);
+
+        assert!(db.set_preview(id, &[9, 9]).unwrap());
+        assert!(db.images_without_preview(10).unwrap().is_empty());
+        assert_eq!(db.preview_of(id).unwrap(), Some(vec![9, 9]));
+    }
+
+    #[test]
+    fn banco_antigo_recebe_a_coluna_de_previa() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.db");
+        {
+            // schema como era antes do painel de prévia
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE items (
+                     id INTEGER PRIMARY KEY,
+                     kind TEXT NOT NULL,
+                     mime TEXT NOT NULL,
+                     text TEXT NOT NULL DEFAULT '',
+                     html TEXT,
+                     blob BLOB,
+                     thumb BLOB,
+                     sha256 TEXT NOT NULL UNIQUE,
+                     bytes INTEGER NOT NULL,
+                     pinned INTEGER NOT NULL DEFAULT 0,
+                     created_at INTEGER NOT NULL
+                 );
+                 INSERT INTO items (kind, mime, text, sha256, bytes, pinned, created_at)
+                 VALUES ('text', 'text/plain', 'antigo', 'sha-antigo', 6, 0, 1);",
+            )
+            .unwrap();
+        }
+
+        let mut db = Db::open(&path).expect("abre banco antigo");
+        let items = db.recent(10).unwrap();
+        assert_eq!(items.len(), 1, "item antigo preservado");
+        assert_eq!(items[0].text, "antigo");
+        assert_eq!(db.preview_of(items[0].id).unwrap(), None);
+
+        let id = db.upsert(&image("novo", 16), &Config::default()).unwrap().id();
+        assert_eq!(
+            db.preview_of(id).unwrap(),
+            Some(vec![4, 5, 6]),
+            "coluna nova funciona depois da migração"
+        );
     }
 
     #[test]

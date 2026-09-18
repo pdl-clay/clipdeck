@@ -216,7 +216,11 @@ Tipos de exemplo já vistos nesta máquina (evidência): `text/plain;charset=utf
   `frosted_system_interface`.
 - Fundo pelo tema: `background(theme.transparent)` (vidro) ou opaco, conforme o tema.
 - Teclas: `↑/↓` navegam, `Enter` cola o item, `Shift+Enter` cola como texto puro,
-  `Delete` remove, `Ctrl+P` alterna pino, `Esc` fecha; clique/toque seleciona.
+  `Delete` remove, `Ctrl+P` alterna pino, `Esc` fecha.
+- **Painel de prévia** à direita, acompanhando o item selecionado: imagem grande
+  (prévia de 1024 px) ou o conteúdo em texto (mono, até 4000 caracteres).
+- **Cliques**: 1 clique seleciona e mostra a prévia (não cola); 2 cliques, dentro de
+  450 ms no mesmo índice, colam. O intervalo fica em `DOUBLE_CLICK`.
 - Clicar fora do painel fecha (o clique é nosso, não do compositor).
 - Seleção: `clipboard::set` → fecha a surface → (se `auto_paste`) Ctrl+V.
 - Ao abrir: consulta fresca no DB (a CLI pode ter mudado o histórico).
@@ -230,8 +234,8 @@ max_item_bytes     = 20971520    # 20 MiB
 max_text_bytes     = 1048576     # 1 MiB
 auto_paste         = true
 paste_delay_ms     = 150
-popup_width        = 640
-popup_height       = 440
+popup_width        = 1000
+popup_height       = 460
 ```
 Arquivo ausente → defaults; chave desconhecida → aviso no log, não erro fatal.
 

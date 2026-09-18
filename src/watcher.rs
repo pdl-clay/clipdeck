@@ -23,7 +23,7 @@ use cosmic::cctk::wayland_client::{
 use sha2::{Digest, Sha256};
 
 use crate::clipboard;
-use crate::config::{Config, THUMB_MAX};
+use crate::config::{Config, PREVIEW_MAX, PREVIEW_QUALITY, THUMB_MAX};
 use crate::db::{Captured, Db, Kind};
 
 /// Gerenciadores de senha marcam conteúdo sensível com este tipo MIME.
@@ -201,10 +201,10 @@ impl Watcher {
             bail!("conteúdo vazio");
         };
 
-        let (text, html, bytes, thumb) = match choice.kind {
+        let (text, html, bytes, thumb, preview) = match choice.kind {
             Kind::Text | Kind::Files => {
                 let text = String::from_utf8_lossy(&raw).into_owned();
-                (text, None, raw, None)
+                (text, None, raw, None, None)
             }
             Kind::Html => {
                 let html = String::from_utf8_lossy(&raw).into_owned();
@@ -215,9 +215,13 @@ impl Watcher {
                     None => None,
                 };
                 let text = companion.unwrap_or_else(|| strip_html(&html));
-                (text, Some(html), raw, None)
+                (text, Some(html), raw, None, None)
             }
-            Kind::Image => (String::new(), None, raw.clone(), thumbnail(&raw)),
+            Kind::Image => {
+                let thumb = thumbnail(&raw);
+                let preview = preview_image(&raw);
+                (String::new(), None, raw, thumb, preview)
+            }
         };
 
         let mut hasher = Sha256::new();
@@ -233,6 +237,7 @@ impl Watcher {
             html,
             bytes,
             thumb,
+            preview,
             sha256,
         }))
     }
@@ -277,6 +282,58 @@ fn thumbnail(bytes: &[u8]) -> Option<Vec<u8>> {
         .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
         .ok()?;
     Some(out)
+}
+
+/// Gera a prévia maior do painel lateral. JPEG para fotos/prints (bem menor que
+/// PNG); PNG quando a imagem tem transparência, para não achatá-la em preto.
+fn preview_image(bytes: &[u8]) -> Option<Vec<u8>> {
+    let image = image::load_from_memory(bytes).ok()?;
+    let preview = image.thumbnail(PREVIEW_MAX, PREVIEW_MAX);
+    let mut out = Vec::new();
+    if preview.color().has_alpha() {
+        preview
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .ok()?;
+    } else {
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+            std::io::Cursor::new(&mut out),
+            PREVIEW_QUALITY,
+        );
+        encoder.encode_image(&preview.to_rgb8()).ok()?;
+    }
+    if out.is_empty() { None } else { Some(out) }
+}
+
+/// Completa a prévia de imagens capturadas antes do painel de prévia existir.
+/// Roda numa thread própria e não bloqueia nada.
+pub fn backfill_previews(mut db: Db) {
+    std::thread::Builder::new()
+        .name("transferencia-preview".into())
+        .spawn(move || {
+            let ids = match db.images_without_preview(500) {
+                Ok(ids) => ids,
+                Err(err) => {
+                    tracing::warn!("procurando prévias antigas: {err:#}");
+                    return;
+                }
+            };
+            if ids.is_empty() {
+                return;
+            }
+            let mut done = 0;
+            for id in ids {
+                let Ok(Some(blob)) = db.blob_of(id) else {
+                    continue;
+                };
+                if let Some(preview) = preview_image(&blob)
+                    && db.set_preview(id, &preview).unwrap_or(false)
+                {
+                    done += 1;
+                }
+            }
+            tracing::info!("prévias geradas para {done} imagem(ns) antiga(s)");
+        })
+        .ok();
 }
 
 /// Texto aproximado de um HTML, para busca e prévia quando não vem o
@@ -489,5 +546,29 @@ mod tests {
     #[test]
     fn thumbnail_de_dados_invalidos_e_none() {
         assert!(thumbnail(b"nao e imagem").is_none());
+        assert!(preview_image(b"nao e imagem").is_none());
+    }
+
+    #[test]
+    fn preview_reduz_para_o_tamanho_maximo_e_gera_imagem_valida() {
+        let mut source = image::RgbImage::new(2400, 1200);
+        for pixel in source.pixels_mut() {
+            *pixel = image::Rgb([200, 40, 90]);
+        }
+        let mut encoded = Vec::new();
+        source
+            .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+            .unwrap();
+
+        let preview = preview_image(&encoded).expect("gera prévia");
+        let decoded = image::load_from_memory(&preview).expect("prévia decodifica");
+        assert!(decoded.width() <= PREVIEW_MAX && decoded.height() <= PREVIEW_MAX);
+        assert_eq!(decoded.width(), PREVIEW_MAX);
+        assert!(
+            preview.len() < encoded.len(),
+            "prévia JPEG menor que o PNG original ({} vs {})",
+            preview.len(),
+            encoded.len()
+        );
     }
 }

@@ -33,8 +33,11 @@ tecla `Super+V`.
 
 ## Uso
 
-| Tecla | Ação |
+| Ação | Resultado |
 |---|---|
+| 1 clique numa linha | seleciona e mostra a **prévia à direita** (não cola) |
+| 2 cliques na linha | cola o item e fecha |
+| clique fora do painel | fecha |
 | `Super+V` | abre/fecha o popup |
 | `↑` `↓` (ou `Tab`) | navega |
 | `Enter` | coloca o item no clipboard e cola no aplicativo anterior |
@@ -43,8 +46,8 @@ tecla `Super+V`.
 | `Delete` | remove o item |
 | `Esc` | fecha |
 
-Clique também seleciona um item; clicar **fora** do painel fecha, e `Esc` fecha. O
-campo de busca já vem com foco.
+O painel direito mostra a prévia do item selecionado: imagens em tamanho grande,
+texto/arquivos como conteúdo. A prévia acompanha as setas do teclado.
 
 ## CLI
 
@@ -70,8 +73,8 @@ max_item_bytes     = 20971520     # teto por item (20 MiB)
 max_text_bytes     = 1048576      # teto para texto (1 MiB)
 auto_paste         = true         # colar automaticamente após escolher
 paste_delay_ms     = 150          # espera para o foco voltar ao app anterior
-popup_width        = 640
-popup_height       = 440
+popup_width        = 1000
+popup_height       = 460
 ```
 
 O arquivo é opcional: ausente, valem os padrões acima. Ajustes de popup e de
@@ -99,8 +102,9 @@ colagem passam a valer na próxima abertura do popup; os limites de captura
 - **Colagem**: o item vai para o clipboard por `wl-copy`; com `auto_paste`, um
   Ctrl+V é injetado pelo teclado virtual do compositor depois que o popup fecha.
   Se a injeção falhar, o item continua no clipboard — é só colar à mão.
-- **Imagens**: miniatura de 256 px guardada no banco (render da lista) e o original
-  em BLOB (usado na colagem).
+- **Imagens**: miniatura de 256 px (lista) e prévia de 1024 px (painel direito) no
+  banco; o original em BLOB é o que vai para o clipboard. Imagens capturadas antes
+  do painel de prévia ganham a prévia na primeira vez que o daemon sobe.
 
 ## Dados
 

@@ -13,6 +13,12 @@ pub const APP_ID: &str = "com.pdl.Transferencia";
 /// Lado maior das miniaturas guardadas no banco para render da lista.
 pub const THUMB_MAX: u32 = 256;
 
+/// Lado maior da prévia do painel lateral.
+pub const PREVIEW_MAX: u32 = 1024;
+
+/// Qualidade do JPEG da prévia (0-100).
+pub const PREVIEW_QUALITY: u8 = 85;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -43,8 +49,8 @@ impl Default for Config {
             max_text_bytes: 1024 * 1024,
             auto_paste: true,
             paste_delay_ms: 150,
-            popup_width: 640.0,
-            popup_height: 440.0,
+            popup_width: 1000.0,
+            popup_height: 460.0,
         }
     }
 }
