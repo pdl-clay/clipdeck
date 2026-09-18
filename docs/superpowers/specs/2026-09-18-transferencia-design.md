@@ -70,9 +70,9 @@ main.rs (clap)
 ### 5.1 `main.rs`
 - clap com subcomandos acima; `--daemon`/`--toggle` também aceitos como flags
   (o libcosmic exige `CosmicFlags` para o `Args` do `run_single_instance`).
-- `key <combo>`: ferramenta de injeção de tecla (`ctrl+v`, `super+v`, …) usando o
-  mesmo caminho do auto-paste. Serve para uso avançado **e** é o mecanismo de
-  verificação do atalho (seção 12).
+- `key <combo>`: injeção de tecla na janela em foco **sem mudar o foco**
+  (`ctrl+v`, `super+v`, `up`, `down`, `enter`, `escape`, `delete`, `tab`). É o
+  mesmo caminho do auto-paste e serve para automação e verificação.
 
 ### 5.2 `watcher.rs`
 ```rust
@@ -215,6 +215,7 @@ Tipos de exemplo já vistos nesta máquina (evidência): `text/plain;charset=utf
   hora relativa, indicador de fixado.
 - Teclas: `↑/↓` navegam, `Enter` cola o item, `Shift+Enter` cola como texto puro,
   `Delete` remove, `Ctrl+P` alterna pino, `Esc` fecha; clique/toque seleciona.
+- Perder o foco fecha o popup (mesmo comportamento do `cosmic-launcher`).
 - Seleção: `clipboard::set` → fecha a surface → (se `auto_paste`) Ctrl+V.
 - Ao abrir: consulta fresca no DB (a CLI pode ter mudado o histórico).
 

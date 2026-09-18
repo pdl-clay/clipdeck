@@ -1,0 +1,45 @@
+[package]
+name = "transferencia"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "MIT"
+description = "Histórico da área de transferência com Super+V para COSMIC"
+repository = "https://github.com/pdl-clay/transferencia"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "webp",
+    "bmp",
+    "tiff",
+    "gif",
+] }
+rusqlite = { version = "0.39", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+toml = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wayland-client = "0.31"
+wayland-protocols-misc = "0.3"
+xkbcommon = "0.8"
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+rev = "87ab8179e1bd9880239c340855ae8862034bd0e8"
+features = [
+    "autosize",
+    "single-instance",
+    "wayland",
+    "winit",
+    "tokio",
+    "multi-window",
+    "dbus-config",
+]
