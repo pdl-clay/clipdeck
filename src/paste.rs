@@ -43,6 +43,9 @@ const KEY_PRESSED: u32 = 1;
 const KEYMAP_SETTLE: Duration = Duration::from_millis(20);
 /// Espera entre pressionar modificador, tecla e soltar.
 const KEY_STEP: Duration = Duration::from_millis(8);
+/// Espera depois da última tecla: sem isso o compositor pode descartar o evento
+/// quando o dispositivo virtual é destruído (o cliente sai logo em seguida).
+const SEND_SETTLE: Duration = Duration::from_millis(80);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Modifier {
@@ -260,6 +263,7 @@ pub fn send_combo(combo: Combo) -> Result<()> {
         keyboard.modifiers(0, 0, 0, 0);
     }
     flush(&conn, &mut queue, &mut state)?;
+    std::thread::sleep(SEND_SETTLE);
 
     keyboard.destroy();
     conn.flush().context("descarregando pedidos para o compositor")?;

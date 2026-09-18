@@ -43,9 +43,8 @@ tecla `Super+V`.
 | `Delete` | remove o item |
 | `Esc` | fecha |
 
-Clique também seleciona um item. O campo de busca tem foco automático. Perder o
-foco fecha o popup — mesmo comportamento do `cosmic-launcher` (clicar em outra
-janela fecha a lista).
+Clique também seleciona um item; clicar **fora** do painel fecha, e `Esc` fecha. O
+campo de busca já vem com foco.
 
 ## CLI
 
@@ -89,9 +88,14 @@ colagem passam a valer na próxima abertura do popup; os limites de captura
   o topo em vez de duplicar.
 - **Privacidade**: ofertas marcadas com `x-kde-passwordManagerHint: secret`
   (gerenciadores de senha) não são gravadas. Nada sai da máquina.
-- **Popup**: instância única por ativação D-Bus; a janela é uma layer surface
-  centralizada (mesmo mecanismo do `cosmic-launcher`), criada no `Super+V` e
-  destruída ao fechar.
+- **Popup**: instância única por ativação D-Bus. A janela é uma layer surface de
+  **tela cheia transparente**: o painel fica centralizado, o blur do tema é
+  aplicado só no retângulo do painel e o resto da superfície captura o clique de
+  fora (que fecha). Como a superfície cobre a saída, o ponteiro nunca sai dela —
+  o compositor não devolve o foco para outra janela no meio do uso do mouse.
+- **Aparência**: segue o tema do COSMIC, incluindo o modo vidro
+  (`frosted_system_interface`): fundo em `background(theme.transparent)` e blur
+  atrás do painel.
 - **Colagem**: o item vai para o clipboard por `wl-copy`; com `auto_paste`, um
   Ctrl+V é injetado pelo teclado virtual do compositor depois que o popup fecha.
   Se a injeção falhar, o item continua no clipboard — é só colar à mão.
@@ -108,6 +112,8 @@ colagem passam a valer na próxima abertura do popup; os limites de captura
 ## Limites conhecidos
 
 - Só o clipboard normal; a seleção primária (X11) não é observada.
+- O auto-paste injeta `Ctrl+V`; terminais costumam usar `Ctrl+Shift+V` — neles o
+  atalho do terminal cola, ou desligue `auto_paste` e cole à mão.
 - O auto-paste depende de o foco voltar ao aplicativo anterior; o `paste_delay_ms`
   ajusta a espera para ambientes mais lentos.
 - Aplicativos que servem a seleção e morrem em seguida podem entregar conteúdo

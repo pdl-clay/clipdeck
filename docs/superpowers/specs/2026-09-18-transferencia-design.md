@@ -206,16 +206,18 @@ Tipos de exemplo já vistos nesta máquina (evidência): `text/plain;charset=utf
 
 ## 8. UI/UX (popup Super+V)
 
-- Surface layer-shell: layer overlay, **sem âncora** (centralizada),
-  `KeyboardInteractivity::Exclusive`, `exclusive_zone = -1`, namespace
-  `transferencia`, sem decoração, tamanho do config (padrão 640×440), cantos e
-  fundo do tema COSMIC (`LiveSettings` + `theme::Container`).
-- Conteúdo: campo de busca no topo (foco automático ao abrir) + lista rolável.
-- Linha: preview 1 linha ellipsizado, ícone do tipo (texto/imagem/arquivos/html),
-  hora relativa, indicador de fixado.
+- Surface layer-shell de **tela cheia**, transparente, `KeyboardInteractivity::Exclusive`,
+  `exclusive_zone = -1`, namespace `transferencia`. O painel (tamanho do config) fica
+  centralizado por dentro; o resto da superfície é o "catcher" que fecha no clique.
+  Cobertura total da saída = o ponteiro nunca sai da nossa superfície, então o
+  compositor não tira o foco no meio do uso do mouse (era o que quebrava o clique).
+- Blur: `blur: Some(false)` na superfície (não borra a tela toda) e um
+  `BlurSurface` com o retângulo do painel, quando o tema tem
+  `frosted_system_interface`.
+- Fundo pelo tema: `background(theme.transparent)` (vidro) ou opaco, conforme o tema.
 - Teclas: `↑/↓` navegam, `Enter` cola o item, `Shift+Enter` cola como texto puro,
   `Delete` remove, `Ctrl+P` alterna pino, `Esc` fecha; clique/toque seleciona.
-- Perder o foco fecha o popup (mesmo comportamento do `cosmic-launcher`).
+- Clicar fora do painel fecha (o clique é nosso, não do compositor).
 - Seleção: `clipboard::set` → fecha a surface → (se `auto_paste`) Ctrl+V.
 - Ao abrir: consulta fresca no DB (a CLI pode ter mudado o histórico).
 

@@ -4,12 +4,16 @@
 //! `set` delega ao `wl-copy`, que forka e mantém a seleção viva — não somos
 //! servidores de seleção.
 
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
 use crate::db::{Item, Kind};
+
+/// Tempo máximo esperando o `wl-copy` assumir a seleção.
+const COPY_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// MIME que o watcher deve pedir, e o tipo de item que ele representa.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,34 +140,52 @@ pub fn payload_for_item(item: &Item, plain: bool) -> Result<Payload<'_>> {
 
 /// Coloca o conteúdo no clipboard via `wl-copy`.
 ///
-/// O conteúdo vai por arquivo temporário em vez de pipe: o `wl-copy` forka e
-/// continua lendo depois que o processo pai sai, e um arquivo elimina tanto o
-/// EPIPE quanto o risco de travar com payload grande.
+/// Duas armadilhas evitadas aqui:
+/// - o `wl-copy` forka para servir a seleção, então um pipe de stderr/stdout
+///   herdado pelo filho nunca fecha e `output()` travaria para sempre. O stderr
+///   vai para arquivo e a espera é limitada por tempo.
+/// - o conteúdo vai por arquivo temporário (não por pipe), evitando EPIPE e
+///   deadlock com payload grande.
 pub fn set(payload: Payload<'_>) -> Result<()> {
     if which("wl-copy").is_none() {
         bail!("wl-copy não encontrado no PATH (instale o pacote wl-clipboard)");
     }
 
-    let mut file = tempfile::tempfile().context("criando arquivo temporário")?;
-    file.write_all(payload.bytes())
+    let mut data = tempfile::tempfile().context("criando arquivo temporário")?;
+    data.write_all(payload.bytes())
         .context("escrevendo conteúdo temporário")?;
-    file.seek(SeekFrom::Start(0))?;
+    data.seek(SeekFrom::Start(0))?;
 
-    let output = Command::new("wl-copy")
+    let mut errors = tempfile::tempfile().context("criando arquivo de erro")?;
+    let error_handle = errors.try_clone().context("clonando arquivo de erro")?;
+
+    let mut child = Command::new("wl-copy")
         .arg("--type")
         .arg(payload.mime())
-        .stdin(Stdio::from(file))
+        .stdin(Stdio::from(data))
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
+        .stderr(Stdio::from(error_handle))
+        .spawn()
         .context("executando wl-copy")?;
 
-    if !output.status.success() {
-        bail!(
-            "wl-copy falhou ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    let deadline = Instant::now() + COPY_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.try_wait().context("esperando o wl-copy")? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("wl-copy não respondeu em {COPY_TIMEOUT:?}");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+
+    if !status.success() {
+        errors.seek(SeekFrom::Start(0))?;
+        let mut text = String::new();
+        errors.read_to_string(&mut text).ok();
+        bail!("wl-copy falhou ({status}): {}", text.trim());
     }
     Ok(())
 }

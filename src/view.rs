@@ -3,6 +3,7 @@
 use cosmic::Element;
 use cosmic::iced::{Alignment, Border, Length};
 use cosmic::theme;
+use cosmic::widget::space::vertical as vertical_space;
 use cosmic::widget::{Column, container, divider, image, mouse_area, scrollable, text, text_input};
 
 use crate::app::{Message, SCROLL_ID};
@@ -78,10 +79,13 @@ pub fn popup<'a>(
         .height(Length::Fixed(height))
         .class(theme::Container::Custom(Box::new(|theme| {
             let cosmic = theme.cosmic();
+            // `background(theme.transparent)` devolve a variante translúcida quando
+            // o tema está com o vidro ligado (o compositor aplica o blur atrás).
+            let container = cosmic.background(theme.transparent);
             container::Style {
-                text_color: Some(cosmic.on_bg_color().into()),
-                icon_color: Some(cosmic.on_bg_color().into()),
-                background: Some(cosmic.bg_color().into()),
+                text_color: Some(container.on.into()),
+                icon_color: Some(container.on.into()),
+                background: Some(container.base.into()),
                 border: Border {
                     radius: cosmic.radius_s().into(),
                     width: 1.0,
@@ -91,6 +95,31 @@ pub fn popup<'a>(
             }
         })))
         .into()
+}
+
+/// Superfície de tela cheia transparente: o clique fora do painel fecha o popup
+/// (somos nós que recebemos o clique, então o compositor não tira o foco no meio
+/// do uso do mouse).
+pub fn overlay<'a>(panel: Element<'a, Message>) -> Element<'a, Message> {
+    let catcher = mouse_area(
+        container(vertical_space())
+            .width(Length::Fill)
+            .height(Length::Fill),
+    )
+    .on_press(Message::Hide);
+
+    cosmic::iced::widget::stack(vec![
+        catcher.into(),
+        container(panel)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into(),
+    ])
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
 }
 
 fn row<'a>(
@@ -123,27 +152,36 @@ fn row<'a>(
             .into(),
     );
 
-    let highlight = theme::Container::Custom(Box::new(move |theme| {
-        let cosmic = theme.cosmic();
-        container::Style {
-            background: focused.then(|| cosmic.bg_component_color().into()),
-            border: Border {
-                radius: cosmic.radius_s().into(),
-                width: if focused { 1.5 } else { 0.0 },
-                color: cosmic.accent_color().into(),
-            },
-            ..Default::default()
-        }
-    }));
+    let highlight = theme::Button::Custom {
+        active: Box::new(move |_focused, theme| row_style(theme, focused, false)),
+        hovered: Box::new(move |_focused, theme| row_style(theme, focused, true)),
+        pressed: Box::new(move |_focused, theme| row_style(theme, focused, true)),
+        disabled: Box::new(|theme| row_style(theme, false, false)),
+    };
 
-    mouse_area(
-        container(cosmic::widget::row(content).spacing(8).align_y(Alignment::Center))
-            .padding([6, 10])
-            .width(Length::Fill)
-            .class(highlight),
-    )
-    .on_press(Message::ActivateIndex(index))
-    .into()
+    cosmic::widget::button::custom(cosmic::widget::row(content).spacing(8).align_y(Alignment::Center))
+        .width(Length::Fill)
+        .padding([6, 10])
+        .on_press(Message::ActivateIndex(index))
+        .class(highlight)
+        .into()
+}
+
+/// Fundo da linha: destacada quando é a linha focada; realce no hover.
+fn row_style(theme: &cosmic::Theme, focused: bool, hovered: bool) -> cosmic::widget::button::Style {
+    let cosmic = theme.cosmic();
+    let container = cosmic.background(theme.transparent);
+    cosmic::widget::button::Style {
+        background: if focused || hovered {
+            Some(container.component.hover.into())
+        } else {
+            None
+        },
+        border_radius: cosmic.radius_s().into(),
+        border_width: if focused { 1.5 } else { 0.0 },
+        border_color: cosmic.accent_color().into(),
+        ..Default::default()
+    }
 }
 
 fn badge(item: &Item) -> &'static str {

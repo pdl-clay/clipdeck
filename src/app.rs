@@ -17,8 +17,7 @@ use cosmic::iced::keyboard::Key;
 use cosmic::iced::runtime::core::event::wayland::LayerEvent;
 use cosmic::iced::runtime::core::event::{PlatformSpecific, wayland};
 use cosmic::iced::runtime::core::layout::Limits;
-use cosmic::iced::runtime::core::window::Id as SurfaceId;
-use cosmic::iced::runtime::platform_specific::wayland::CornerRadius;
+use cosmic::iced::runtime::core::window::{Event as WindowEvent, Id as SurfaceId};
 use cosmic::iced::runtime::platform_specific::wayland::layer_surface::{
     IcedMargin, IcedOutput, SctkLayerSurfaceSettings,
 };
@@ -39,8 +38,6 @@ use crate::paste;
 use crate::view;
 use crate::watcher;
 
-/// Raio dos cantos da surface (o compositor recorta).
-const CORNER_RADIUS: u32 = 12;
 /// Itens carregados por abertura do popup.
 const LIST_LIMIT: usize = 200;
 
@@ -109,6 +106,7 @@ pub enum Message {
     TogglePinFocused,
     FocusNext,
     FocusPrevious,
+    Resized(cosmic::iced::Size),
     Hide,
     Layer(LayerEvent, SurfaceId),
 }
@@ -122,6 +120,7 @@ pub struct App {
     query: String,
     focused: usize,
     window_id: SurfaceId,
+    surface_size: Option<cosmic::iced::Size>,
     visible: bool,
     status: Option<String>,
 }
@@ -145,11 +144,16 @@ pub fn run(action: Action) -> Result<(), Box<dyn std::error::Error>> {
 
 impl App {
     fn refresh(&mut self) {
+        let started = std::time::Instant::now();
         let result = if self.query.trim().is_empty() {
             self.db.recent(LIST_LIMIT)
         } else {
             self.db.search(&self.query, LIST_LIMIT)
         };
+        let elapsed = started.elapsed();
+        if elapsed > Duration::from_millis(100) {
+            tracing::warn!("consulta ao histórico levou {elapsed:?}");
+        }
         match result {
             Ok(items) => {
                 self.items = items;
@@ -192,31 +196,54 @@ impl App {
         surface_task(app_layer_shell::<Self>(
             |_app: &Self| LiveSettings {
                 padding: Some(IcedMargin::default()),
-                corners: Some(CornerRadius {
-                    top_left: CORNER_RADIUS,
-                    top_right: CORNER_RADIUS,
-                    bottom_left: CORNER_RADIUS,
-                    bottom_right: CORNER_RADIUS,
-                }),
-                blur: None,
+                // Tela cheia: o recorte e o blur ficam só no painel (BlurSurface).
+                corners: None,
+                // Não deixa o tema ligar blur na superfície inteira.
+                blur: Some(false),
             },
             |app: &mut Self| SctkLayerSurfaceSettings {
                 id: app.window_id,
                 layer: Layer::Overlay,
                 keyboard_interactivity: KeyboardInteractivity::Exclusive,
-                anchor: Anchor::empty(),
+                // Cobre a saída inteira: o ponteiro nunca sai da nossa superfície,
+                // então o compositor não devolve o foco para outra janela enquanto
+                // o usuário usa o mouse — e o clique fora fecha (somos nós que
+                // recebemos esse clique).
+                anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
                 input_zone: None,
                 output: IcedOutput::Active,
                 namespace: "transferencia".to_string(),
-                size: Some((
-                    Some(app.cfg.popup_width.round() as u32),
-                    Some(app.cfg.popup_height.round() as u32),
-                )),
+                size: None,
                 exclusive_zone: -1,
                 margin: IcedMargin::default(),
                 size_limits: Limits::NONE.min_width(1.0).min_height(1.0),
             },
             None,
+        ))
+    }
+
+    /// Aplica blur só no retângulo do painel; o resto da superfície fica
+    /// transparente (e sem blur), então a tela não é afetada.
+    fn blur_panel(&self) -> Task<Message> {
+        let Some(size) = self.surface_size else {
+            return Task::none();
+        };
+        if !self.core.system_theme().cosmic().frosted_system_interface {
+            return Task::none();
+        }
+        let rect = cosmic::iced::Rectangle {
+            x: (size.width - self.cfg.popup_width) / 2.0,
+            y: (size.height - self.cfg.popup_height) / 2.0,
+            width: self.cfg.popup_width,
+            height: self.cfg.popup_height,
+        };
+        cosmic::iced::runtime::task::effect(cosmic::iced::runtime::Action::PlatformSpecific(
+            cosmic::iced::runtime::platform_specific::Action::Wayland(
+                cosmic::iced::runtime::platform_specific::wayland::Action::BlurSurface(
+                    self.window_id,
+                    Some(vec![rect]),
+                ),
+            ),
         ))
     }
 
@@ -237,6 +264,7 @@ impl App {
     }
 
     fn activate(&mut self, index: usize, plain: bool) -> Task<Message> {
+        let started = std::time::Instant::now();
         let Some(item) = self.items.get(index).cloned() else {
             return self.hide();
         };
@@ -257,6 +285,7 @@ impl App {
             self.status = Some(format!("não deu para copiar: {err}"));
             return Task::none();
         }
+        tracing::debug!("item {} no clipboard em {:?}", item.id, started.elapsed());
 
         let task = self.hide();
         if self.cfg.auto_paste {
@@ -333,10 +362,13 @@ impl cosmic::Application for App {
 
     const APP_ID: &'static str = APP_ID;
 
-    fn init(core: Core, flags: Flags) -> (Self, Task<Message>) {
+    fn init(mut core: Core, flags: Flags) -> (Self, Task<Message>) {
         let Flags { action, cfg, db } = flags;
         let mut status = None;
         info!("transferencia iniciado em modo {action}");
+        // Como o cosmic-launcher: superfície de sistema, para o tema aplicar a
+        // regra de vidro (`frosted_system_interface`) às nossas superfícies.
+        core.set_app_type(cosmic::core::AppType::System);
 
         // Conexão própria para o watcher: ele escreve, a UI lê.
         match Db::open(&crate::config::db_path()) {
@@ -361,6 +393,7 @@ impl cosmic::Application for App {
             query: String::new(),
             focused: 0,
             window_id: SurfaceId::unique(),
+            surface_size: None,
             visible: false,
             status,
         };
@@ -382,7 +415,9 @@ impl cosmic::Application for App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
+        tracing::debug!("mensagem recebida: {message:?}");
+        let started = std::time::Instant::now();
+        let task = match message {
             Message::InputChanged(value) => {
                 self.query = value;
                 self.focused = 0;
@@ -395,6 +430,10 @@ impl cosmic::Application for App {
             Message::TogglePinFocused => self.toggle_pin_focused(),
             Message::FocusNext => self.focus(1),
             Message::FocusPrevious => self.focus(-1),
+            Message::Resized(size) => {
+                self.surface_size = Some(size);
+                self.blur_panel()
+            }
             Message::Hide => self.hide(),
             Message::Layer(event, id) => {
                 if id != self.window_id {
@@ -405,7 +444,12 @@ impl cosmic::Application for App {
                     LayerEvent::Focused | LayerEvent::Done => Task::none(),
                 }
             }
+        };
+        let elapsed = started.elapsed();
+        if elapsed > Duration::from_millis(100) {
+            tracing::warn!("tratando mensagem levou {elapsed:?}");
         }
+        task
     }
 
     /// O `--toggle` chega aqui como ativação D-Bus da instância que já roda.
@@ -436,7 +480,7 @@ impl cosmic::Application for App {
 
     fn view_window(&self, id: SurfaceId) -> Element<'_, Self::Message> {
         if id == self.window_id {
-            return view::popup(
+            return view::overlay(view::popup(
                 &self.items,
                 &self.thumb_handles,
                 &self.query,
@@ -444,13 +488,23 @@ impl cosmic::Application for App {
                 self.status.as_deref(),
                 self.cfg.popup_width,
                 self.cfg.popup_height,
-            );
+            ));
         }
         container(vertical_space()).into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
         listen_raw(|event, _status, _id| match event {
+            cosmic::iced::Event::Mouse(cosmic::iced::mouse::Event::ButtonPressed(button)) => {
+                tracing::debug!("clique recebido: {button:?}");
+                None
+            }
+            cosmic::iced::Event::Window(WindowEvent::Opened { size, .. }) => {
+                Some(Message::Resized(size))
+            }
+            cosmic::iced::Event::Window(WindowEvent::Resized(size)) => {
+                Some(Message::Resized(size))
+            }
             cosmic::iced::Event::PlatformSpecific(PlatformSpecific::Wayland(
                 wayland::Event::Layer(event, _, id),
             )) => Some(Message::Layer(event, id)),
