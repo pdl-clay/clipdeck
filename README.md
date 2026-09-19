@@ -11,7 +11,6 @@ Escrito em Rust. Sem daemon de terceiros, sem serviço externo, sem rede.
 - COSMIC (testado no 1.8.0). O compositor precisa expor
   `zwlr_data_control_manager_v1`, `zwlr_layer_shell_v1` e
   `zwp_virtual_keyboard_manager_v1` — o `transferencia doctor` confere.
-- `wl-copy` (pacote `wl-clipboard`) para servir a seleção.
 - Rust 1.93+ só para compilar.
 
 ## Instalação
@@ -41,11 +40,15 @@ tecla `Super+V`.
 | `Super+V` | abre/fecha o popup |
 | `↑` `↓` (ou `Tab`) | navega |
 | `Enter` | coloca o item no clipboard e cola no aplicativo anterior |
-| `Shift+Enter` | cola como texto puro (útil para itens HTML) |
+| `Shift+Enter` | cola como texto puro (ignora a marcação de itens HTML) |
 | `Ctrl+P` | fixa/desfixa (itens fixados não saem pelo limite) |
 | `Delete` | remove o item |
 | `PageUp` `PageDown` | rolam o painel de prévia (textos grandes) |
 | `Esc` | fecha |
+
+Itens HTML vão para o clipboard com `text/html` (a marcação) **e** `text/plain` (o
+texto): aplicativos que não entendem HTML — campo de texto, terminal, editor
+simples — recebem o texto limpo, não a marcação.
 
 O painel direito mostra a prévia do item selecionado: imagens em tamanho grande,
 texto/arquivos como conteúdo. A prévia acompanha as setas do teclado. Textos
@@ -57,12 +60,12 @@ longos rolam com a roda do mouse, com a barra de rolagem ou com `PageUp`/`PageDo
 ```sh
 transferencia list [--limit N] [--json]     # itens recentes
 transferencia search <termo>                # busca FTS (sem acento, por prefixo)
-transferencia copy <id> [--plain]           # devolve um item ao clipboard
+transferencia copy <id> [--plain]           # devolve um item ao clipboard (fica um processo servindo)
 transferencia pin <id> | unpin <id>
 transferencia remove <id>
 transferencia clear [--keep-pinned] --yes
 transferencia status [--json]               # estado do banco e da configuração
-transferencia doctor                        # checa protocolos, wl-copy, teclado virtual, atalho
+transferencia doctor                        # checa protocolos, seleção, teclado virtual, atalho
 transferencia key ctrl+v | super+v | up | down | enter | escape | delete | tab
 transferencia install | uninstall [--purge]
 ```
@@ -102,9 +105,13 @@ colagem passam a valer na próxima abertura do popup; os limites de captura
 - **Aparência**: segue o tema do COSMIC, incluindo o modo vidro
   (`frosted_system_interface`): fundo em `background(theme.transparent)` e blur
   atrás do painel.
-- **Colagem**: o item vai para o clipboard por `wl-copy`; com `auto_paste`, um
+- **Colagem**: a seleção é publicada pelo próprio transferencia
+  (`zwlr_data_control_manager_v1`), com um conteúdo por tipo MIME — item HTML
+  oferece a marcação em `text/html` e o texto em `text/plain`. Com `auto_paste`, um
   Ctrl+V é injetado pelo teclado virtual do compositor depois que o popup fecha.
-  Se a injeção falhar, o item continua no clipboard — é só colar à mão.
+  Se a injeção falhar, o item continua no clipboard — é só colar à mão. No popup
+  quem serve é o daemon; no `transferencia copy`, um processo em segundo plano, que
+  sai quando outro aplicativo copia algo (a seleção morre com quem a publica).
 - **Imagens**: miniatura de 256 px (lista) e prévia de 1024 px (painel direito) no
   banco; o original em BLOB é o que vai para o clipboard. Imagens capturadas antes
   do painel de prévia ganham a prévia na primeira vez que o daemon sobe.

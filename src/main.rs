@@ -7,6 +7,7 @@ mod cli;
 mod config;
 mod db;
 mod paste;
+mod selection;
 mod shortcut;
 mod util;
 mod view;

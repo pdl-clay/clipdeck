@@ -35,6 +35,7 @@ use crate::clipboard;
 use crate::config::{APP_ID, Config};
 use crate::db::{Db, Item};
 use crate::paste;
+use crate::selection;
 use crate::view;
 use crate::watcher;
 
@@ -336,18 +337,21 @@ impl App {
             _ => item,
         };
 
-        let payload = match clipboard::payload_for_item(&item, plain) {
+        let payload = match clipboard::Payload::for_item(&item, plain) {
             Ok(payload) => payload,
             Err(err) => {
                 self.status = Some(format!("não deu para copiar: {err}"));
                 return Task::none();
             }
         };
-        if let Err(err) = clipboard::set(payload) {
+        // Nós mesmos servimos a seleção: ela continua viva depois que o popup
+        // fecha (é o que o alvo consulta ao colar).
+        let label = payload.label().to_string();
+        if let Err(err) = selection::spawn(payload) {
             self.status = Some(format!("não deu para copiar: {err}"));
             return Task::none();
         }
-        tracing::debug!("item {} no clipboard em {:?}", item.id, started.elapsed());
+        tracing::debug!("item {} ({label}) no clipboard em {:?}", item.id, started.elapsed());
 
         let task = self.hide();
         if self.cfg.auto_paste {

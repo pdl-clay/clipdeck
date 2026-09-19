@@ -1,5 +1,7 @@
 //! Subcomandos que abrem o banco direto, sem depender do daemon.
 
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use std::str::FromStr;
 
@@ -11,7 +13,7 @@ use crate::clipboard;
 use crate::config::{self, Config};
 use crate::db::{Db, Item, Stats};
 use crate::paste::Combo;
-use crate::{app, autostart, shortcut, util, watcher};
+use crate::{app, autostart, selection, shortcut, util, watcher};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -80,6 +82,13 @@ pub enum Command {
         #[arg(long)]
         plain: bool,
     },
+    /// Publica a seleção de um item e fica servindo até outro cliente copiar
+    #[command(hide = true)]
+    Serve {
+        id: i64,
+        #[arg(long)]
+        plain: bool,
+    },
     /// Fixa um item (não é descartado pelo limite de histórico)
     Pin { id: i64 },
     /// Desfixa um item
@@ -129,16 +138,8 @@ impl Command {
                 let db = open_db()?;
                 print_items(&db.search(&query.join(" "), limit)?, json)
             }
-            Command::Copy { id, plain } => {
-                let db = open_db()?;
-                let item = db
-                    .get(id)?
-                    .with_context(|| format!("item {id} não existe no histórico"))?;
-                let payload = clipboard::payload_for_item(&item, plain)?;
-                clipboard::set(payload)?;
-                println!("item {id} ({}) no clipboard", item.mime);
-                Ok(())
-            }
+            Command::Copy { id, plain } => copy(id, plain),
+            Command::Serve { id, plain } => serve(id, plain),
             Command::Pin { id } => set_pinned(id, true),
             Command::Unpin { id } => set_pinned(id, false),
             Command::Remove { id } => {
@@ -172,7 +173,6 @@ impl Command {
                             "bytes": stats.bytes,
                             "oldest": stats.oldest,
                             "newest": stats.newest,
-                            "wl_copy": clipboard::which("wl-copy").map(|p| p.to_string_lossy().into_owned()),
                             "auto_paste": cfg.auto_paste,
                             "max_items": cfg.max_items,
                             "max_total_bytes": cfg.max_total_bytes,
@@ -202,6 +202,66 @@ impl Command {
 
 fn open_db() -> Result<Db> {
     Db::open(&config::db_path())
+}
+
+/// Publica um item no clipboard por meio de um processo filho: a seleção morre
+/// junto com quem a serve, e a CLI precisa sair.
+fn copy(id: i64, plain: bool) -> Result<()> {
+    let binary = std::env::current_exe().context("descobrindo o executável")?;
+    let mut command = std::process::Command::new(binary);
+    command.arg("serve").arg(id.to_string());
+    if plain {
+        command.arg("--plain");
+    }
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        // Grupo próprio: o filho sobrevive à CLI e não morre no Ctrl+C do terminal.
+        .process_group(0)
+        .spawn()
+        .context("iniciando quem serve a seleção")?;
+
+    let mut ready = String::new();
+    if let Some(stdout) = child.stdout.take() {
+        BufReader::new(stdout)
+            .read_line(&mut ready)
+            .context("esperando a seleção ficar pronta")?;
+    }
+
+    let report = ready.trim();
+    match report.strip_prefix("ok ") {
+        Some(label) => {
+            println!("item {id} ({label}) no clipboard");
+            Ok(())
+        }
+        None => {
+            let _ = child.wait();
+            if report.is_empty() {
+                bail!("quem serve a seleção saiu sem publicá-la (erro acima)");
+            }
+            bail!("{report}");
+        }
+    }
+}
+
+/// Publica a seleção e fica servindo até outro cliente copiar — é o processo
+/// que o `copy` deixa rodando em segundo plano.
+fn serve(id: i64, plain: bool) -> Result<()> {
+    let db = open_db()?;
+    let item = db
+        .get(id)?
+        .with_context(|| format!("item {id} não existe no histórico"))?;
+    let payload = clipboard::Payload::for_item(&item, plain)?;
+    drop(item);
+    drop(db);
+
+    let label = payload.label().to_string();
+    let server = selection::Server::start(payload)?;
+    // Quem pediu a cópia espera esta linha para saber que a seleção já é nossa.
+    println!("ok {label}");
+    std::io::stdout().flush().context("avisando quem pediu a cópia")?;
+    server.run()
 }
 
 fn set_pinned(id: i64, pinned: bool) -> Result<()> {
@@ -261,10 +321,6 @@ fn print_status(stats: &Stats) {
     );
     if let Some(newest) = stats.newest {
         println!("último: {}", util::human_age(newest));
-    }
-    match clipboard::which("wl-copy") {
-        Some(path) => println!("wl-copy: {}", path.display()),
-        None => println!("wl-copy: AUSENTE (instale wl-clipboard)"),
     }
 }
 
@@ -391,9 +447,9 @@ fn doctor() -> Result<()> {
         Err(err) => println!("banco:     ERRO ({err:#})"),
     }
 
-    match clipboard::which("wl-copy") {
-        Some(path) => println!("wl-copy:   {}", path.display()),
-        None => println!("wl-copy:   AUSENTE (instale wl-clipboard)"),
+    match selection::check_support() {
+        Ok(()) => println!("seleção:   ok (o próprio transferencia serve o clipboard)"),
+        Err(err) => println!("seleção:   INDISPONÍVEL ({err})"),
     }
     match crate::paste::check_support() {
         Ok(()) => println!("teclado virtual: ok"),

@@ -47,11 +47,13 @@ main.rs (clap)
  ├── --daemon     → app libcosmic + watcher (autostart)
  ├── --toggle     → ativa a instância única (Super+V); se não houver, sobe e mostra
  ├── list|search|clear|remove|copy|pin|status|doctor|install|uninstall|key  (CLI)
+ │   └── serve (oculto) — quem `copy` deixa servindo a seleção em segundo plano
  │
  processo daemon
  ├── app.rs    — libcosmic Application (run_single_instance, no_main_window, exit_on_close=false)
  │               surface layer-shell criada no toggle, destruída ao fechar
  ├── watcher.rs— thread própria, conexão Wayland própria, data-control → mpsc
+ ├── selection.rs — publica a seleção (data-control source multi-MIME, conexão própria)
  └── db.rs     — SQLite (WAL); também aberto pela CLI
 ```
 
@@ -114,16 +116,22 @@ impl Db {
 ```
 `rusqlite` com feature `bundled` (mesmo padrão do seu `commandcode-usage`).
 
-### 5.4 `clipboard.rs`
+### 5.4 `clipboard.rs` + `selection.rs`
 ```rust
-pub enum Payload<'a> { Text(&'a str), Html{ html:&'a str, plain:&'a str },
-                       Image{ mime:&'a str, bytes:&'a [u8] }, Files(&'a str) }
-pub fn set(payload: Payload<'_>) -> Result<()>;   // wl-copy --type <mime>, stdin
-pub fn classify(mimes: &[String]) -> Option<Kind>;  // função pura, testável
+pub struct Payload { /* tipo MIME → conteúdo: um conteúdo por tipo */ }
+impl Payload { pub fn for_item(item: &Item, plain: bool) -> Result<Payload>; }
+pub fn choose(mimes: &[String]) -> Option<Choice>;  // função pura, testável
 pub fn is_secret_hint(value: Option<&[u8]>) -> bool;  // valor lido de x-kde-passwordManagerHint
 ```
-Seleção é servida por um processo `wl-copy` (comportamento padrão dele: forka e
-mantém a seleção). Não implementamos servidor de seleção próprio.
+A seleção é publicada por nós (`selection.rs`, `zwlr_data_control_manager_v1`), não
+pelo `wl-copy`: um item HTML publica a marcação em `text/html` **e** o companheiro em
+`text/plain`. O `wl-copy` anuncia vários tipos servindo os **mesmos bytes** em todos
+— um alvo de texto puro recebia a marcação HTML (corrigido em 2026-09-19). Item de
+texto publica o mesmo conteúdo nos tipos de texto; imagem, só o tipo da imagem.
+
+Quem publica precisa continuar vivo: no popup é o daemon (uma thread); no
+`transferencia copy` é um processo filho de `serve`, que sai quando outro cliente
+assume a seleção.
 
 ### 5.5 `paste.rs` (auto-paste)
 ```rust
@@ -218,11 +226,13 @@ Tipos de exemplo já vistos nesta máquina (evidência): `text/plain;charset=utf
 - Teclas: `↑/↓` navegam, `Enter` cola o item, `Shift+Enter` cola como texto puro,
   `Delete` remove, `Ctrl+P` alterna pino, `Esc` fecha.
 - **Painel de prévia** à direita, acompanhando o item selecionado: imagem grande
-  (prévia de 1024 px) ou o conteúdo em texto (mono, até 4000 caracteres).
+  (prévia de 1024 px) ou o conteúdo em texto (mono, rolável, até 60 000 caracteres
+  renderizados).
 - **Cliques**: 1 clique seleciona e mostra a prévia (não cola); 2 cliques, dentro de
   450 ms no mesmo índice, colam. O intervalo fica em `DOUBLE_CLICK`.
 - Clicar fora do painel fecha (o clique é nosso, não do compositor).
-- Seleção: `clipboard::set` → fecha a surface → (se `auto_paste`) Ctrl+V.
+- Seleção: `selection::spawn` publica a seleção → fecha a surface → (se `auto_paste`)
+  Ctrl+V pelo teclado virtual.
 - Ao abrir: consulta fresca no DB (a CLI pode ter mudado o histórico).
 
 ## 9. Configuração — `~/.config/transferencia/config.toml`
@@ -245,7 +255,7 @@ Arquivo ausente → defaults; chave desconhecida → aviso no log, não erro fat
 |---|---|
 | `--toggle` sem daemon rodando | sobe a instância e mostra a janela |
 | Compositor sem `data-control` | daemon sobe, popup funciona, `status`/`doctor` reportam "captura indisponível" |
-| `wl-copy` ausente | erro explícito ao selecionar (mensagem no `doctor`) |
+| Falha ao publicar a seleção | erro no rodapé do popup (na CLI, na hora); o histórico não muda |
 | `zwp_virtual_keyboard` ausente ou falha | loga, não injeta; item continua copiado |
 | Config cosmic ilegível/inesperado | `install` recusa-se a escrever (não corrompe), instrui o caminho pela GUI |
 | DB ocupado | `busy_timeout` 2s + erro reportado |
@@ -268,7 +278,8 @@ Arquivo ausente → defaults; chave desconhecida → aviso no log, não erro fat
 1. `cargo test`;
 2. daemon + `wl-copy` de texto, imagem e `text/uri-list` → conferir `transferencia list`;
 3. abrir o popup (toggle) e **screenshot** confirmando a janela centralizada e a lista;
-4. selecionar item → `wl-paste -n` devolve o conteúdo esperado; `--type text/html` para HTML;
+4. selecionar item → `wl-paste -n` devolve o conteúdo esperado; num item HTML,
+   `wl-paste -n` devolve o texto puro e `wl-paste -t text/html` a marcação;
 5. verificação do atalho sem depender do usuário: `transferencia key super+v` (injeção
    via virtual keyboard) deve abrir o popup; `transferencia key super+Return` deve
    continuar abrindo o alacritty — isso prova que o patch do `custom` **não quebrou**
