@@ -1,4 +1,4 @@
-//! Configuração em `~/.config/transferencia/config.toml`.
+//! Configuração em `~/.config/clipdeck/config.toml`.
 //!
 //! Arquivo ausente ou inválido não é fatal: cai nos defaults e loga um aviso.
 //! Chaves desconhecidas são reportadas para o usuário não achar que configurou algo.
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// Identificador do aplicativo (usado no single-instance, autostart e .desktop).
-pub const APP_ID: &str = "com.pdl.Transferencia";
+pub const APP_ID: &str = "com.pdl.Clipdeck";
 
 /// Lado maior das miniaturas guardadas no banco para render da lista.
 pub const THUMB_MAX: u32 = 256;
@@ -73,13 +73,13 @@ fn home() -> PathBuf {
 pub fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| home().join(".config"))
-        .join("transferencia")
+        .join("clipdeck")
 }
 
 pub fn data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| home().join(".local/share"))
-        .join("transferencia")
+        .join("clipdeck")
 }
 
 pub fn config_path() -> PathBuf {
@@ -117,5 +117,4 @@ impl Config {
             }
         }
     }
-
 }

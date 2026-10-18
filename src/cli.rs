@@ -17,7 +17,7 @@ use crate::{app, autostart, selection, shortcut, util, watcher};
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "transferencia",
+    name = "clipdeck",
     version,
     about = "Histórico da área de transferência para COSMIC (Super+V)",
     long_about = None
@@ -260,7 +260,9 @@ fn serve(id: i64, plain: bool) -> Result<()> {
     let server = selection::Server::start(payload)?;
     // Quem pediu a cópia espera esta linha para saber que a seleção já é nossa.
     println!("ok {label}");
-    std::io::stdout().flush().context("avisando quem pediu a cópia")?;
+    std::io::stdout()
+        .flush()
+        .context("avisando quem pediu a cópia")?;
     server.run()
 }
 
@@ -327,7 +329,9 @@ fn print_status(stats: &Stats) {
 fn install() -> Result<()> {
     let binary = shortcut::current_binary();
     if !binary.contains('/') {
-        bail!("não descobri o caminho do executável; rode o binário instalado (ex.: ~/.local/bin/transferencia install)");
+        bail!(
+            "não descobri o caminho do executável; rode o binário instalado (ex.: ~/.local/bin/clipdeck install)"
+        );
     }
 
     let outcome = autostart::install(&binary)?;
@@ -401,7 +405,11 @@ fn uninstall(purge: bool) -> Result<()> {
 
     if purge {
         let db = config::db_path();
-        for path in [db.clone(), db.with_extension("db-wal"), db.with_extension("db-shm")] {
+        for path in [
+            db.clone(),
+            db.with_extension("db-wal"),
+            db.with_extension("db-shm"),
+        ] {
             if path.exists() {
                 std::fs::remove_file(&path)
                     .with_context(|| format!("removendo {}", path.display()))?;
@@ -448,7 +456,7 @@ fn doctor() -> Result<()> {
     }
 
     match selection::check_support() {
-        Ok(()) => println!("seleção:   ok (o próprio transferencia serve o clipboard)"),
+        Ok(()) => println!("seleção:   ok (o próprio clipdeck serve o clipboard)"),
         Err(err) => println!("seleção:   INDISPONÍVEL ({err})"),
     }
     match crate::paste::check_support() {

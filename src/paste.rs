@@ -1,7 +1,7 @@
 //! Injeção de teclas via `zwp_virtual_keyboard_manager_v1`.
 //!
 //! Serve ao auto-paste (Ctrl+V depois de escolher um item) e ao subcomando
-//! `transferencia key`, que envia uma combinação para a janela em foco sem
+//! `clipdeck key`, que envia uma combinação para a janela em foco sem
 //! roubar o foco.
 //!
 //! No fio os keycodes são os do kernel (evdev): a spec manda somar 8 para obter
@@ -209,9 +209,9 @@ fn setup() -> Result<(Connection, EventQueue<State>, State, ZwpVirtualKeyboardV1
         .map_err(|err| anyhow!("lendo os globais do Wayland: {err}"))?;
     let qh = queue.handle();
 
-    let manager: ZwpVirtualKeyboardManagerV1 = globals.bind(&qh, 1..=1, ()).map_err(|err| {
-        anyhow!("compositor não oferece zwp_virtual_keyboard_manager_v1 ({err})")
-    })?;
+    let manager: ZwpVirtualKeyboardManagerV1 = globals
+        .bind(&qh, 1..=1, ())
+        .map_err(|err| anyhow!("compositor não oferece zwp_virtual_keyboard_manager_v1 ({err})"))?;
     let seat: WlSeat = globals
         .bind(&qh, 1..=9, ())
         .map_err(|err| anyhow!("nenhum seat Wayland: {err}"))?;
@@ -276,7 +276,8 @@ pub fn send_combo(combo: Combo) -> Result<()> {
     std::thread::sleep(SEND_SETTLE);
 
     keyboard.destroy();
-    conn.flush().context("descarregando pedidos para o compositor")?;
+    conn.flush()
+        .context("descarregando pedidos para o compositor")?;
     Ok(())
 }
 

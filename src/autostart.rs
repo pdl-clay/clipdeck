@@ -24,7 +24,7 @@ pub fn desktop_entry(binary: &str) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name=transferencia\n\
+         Name=clipdeck\n\
          Comment=Histórico da área de transferência (Super+V)\n\
          Exec={binary} --daemon\n\
          Terminal=false\n\
@@ -50,8 +50,7 @@ pub fn install_at(path: &Path, binary: &str) -> Result<Outcome> {
         });
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("criando {}", parent.display()))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("criando {}", parent.display()))?;
     }
     std::fs::write(path, desired).with_context(|| format!("escrevendo {}", path.display()))?;
     Ok(Outcome {
@@ -92,9 +91,9 @@ mod tests {
 
     #[test]
     fn entrada_desktop_tem_exec_com_daemon() {
-        let entry = desktop_entry("/usr/bin/transferencia");
+        let entry = desktop_entry("/usr/bin/clipdeck");
         assert!(entry.starts_with("[Desktop Entry]\n"));
-        assert!(entry.contains("Exec=/usr/bin/transferencia --daemon\n"));
+        assert!(entry.contains("Exec=/usr/bin/clipdeck --daemon\n"));
         assert!(entry.contains("Type=Application\n"));
         assert!(entry.contains("X-GNOME-Autostart-enabled=true\n"));
         assert!(entry.ends_with('\n'));
@@ -103,36 +102,42 @@ mod tests {
     #[test]
     fn caminho_fica_em_autostart_com_app_id() {
         let path = autostart_path();
-        assert!(path.to_string_lossy().ends_with("autostart/com.pdl.Transferencia.desktop"));
+        assert!(
+            path.to_string_lossy()
+                .ends_with("autostart/com.pdl.Clipdeck.desktop")
+        );
     }
 
     #[test]
     fn instala_troca_e_remove_arquivo_de_autostart() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("com.pdl.Transferencia.desktop");
+        let path = dir.path().join("com.pdl.Clipdeck.desktop");
 
-        let outcome = install_at(&path, "/usr/bin/transferencia").unwrap();
+        let outcome = install_at(&path, "/usr/bin/clipdeck").unwrap();
         assert!(outcome.changed);
         assert!(is_installed_at(&path));
         let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("Exec=/usr/bin/transferencia --daemon"));
+        assert!(content.contains("Exec=/usr/bin/clipdeck --daemon"));
 
         assert!(
-            !install_at(&path, "/usr/bin/transferencia").unwrap().changed,
+            !install_at(&path, "/usr/bin/clipdeck").unwrap().changed,
             "mesmo conteúdo não reescreve"
         );
         assert!(
-            install_at(&path, "/novo/transferencia").unwrap().changed,
+            install_at(&path, "/novo/clipdeck").unwrap().changed,
             "caminho novo reescreve"
         );
         assert!(
             std::fs::read_to_string(&path)
                 .unwrap()
-                .contains("Exec=/novo/transferencia --daemon")
+                .contains("Exec=/novo/clipdeck --daemon")
         );
 
         assert!(uninstall_at(&path).unwrap().changed);
         assert!(!is_installed_at(&path));
-        assert!(!uninstall_at(&path).unwrap().changed, "remover de novo é no-op");
+        assert!(
+            !uninstall_at(&path).unwrap().changed,
+            "remover de novo é no-op"
+        );
     }
 }

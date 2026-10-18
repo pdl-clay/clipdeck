@@ -186,8 +186,8 @@ impl Db {
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("criando diretório {}", dir.display()))?;
         }
-        let conn = Connection::open(path)
-            .with_context(|| format!("abrindo banco {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("abrindo banco {}", path.display()))?;
         Self::prepare(conn)
     }
 
@@ -338,11 +338,9 @@ impl Db {
     pub fn blob_of(&self, id: i64) -> Result<Option<Vec<u8>>> {
         Ok(self
             .conn
-            .query_row(
-                "SELECT blob FROM items WHERE id = ?1",
-                params![id],
-                |row| row.get::<_, Option<Vec<u8>>>(0),
-            )
+            .query_row("SELECT blob FROM items WHERE id = ?1", params![id], |row| {
+                row.get::<_, Option<Vec<u8>>>(0)
+            })
             .optional()?
             .flatten())
     }
@@ -366,9 +364,11 @@ impl Db {
     pub fn toggle_pinned(&mut self, id: i64) -> Result<Option<bool>> {
         let current: Option<bool> = self
             .conn
-            .query_row("SELECT pinned FROM items WHERE id = ?1", params![id], |row| {
-                row.get::<_, i64>(0).map(|v| v != 0)
-            })
+            .query_row(
+                "SELECT pinned FROM items WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, i64>(0).map(|v| v != 0),
+            )
             .optional()?;
         match current {
             Some(pinned) => {
@@ -648,7 +648,10 @@ mod tests {
         assert_eq!(items[0].text, "antigo");
         assert_eq!(db.preview_of(items[0].id).unwrap(), None);
 
-        let id = db.upsert(&image("novo", 16), &Config::default()).unwrap().id();
+        let id = db
+            .upsert(&image("novo", 16), &Config::default())
+            .unwrap()
+            .id();
         assert_eq!(
             db.preview_of(id).unwrap(),
             Some(vec![4, 5, 6]),
@@ -670,7 +673,10 @@ mod tests {
         assert!(!items[0].pinned);
 
         let again = db.upsert(&captured("olá mundo"), &cfg).unwrap();
-        assert!(!again.was_inserted(), "mesmo sha256 deve subir, não duplicar");
+        assert!(
+            !again.was_inserted(),
+            "mesmo sha256 deve subir, não duplicar"
+        );
         assert_eq!(again.id(), first.id());
         let items = db.recent(10).unwrap();
         assert_eq!(items.len(), 1);

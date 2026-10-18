@@ -9,11 +9,13 @@ use std::fmt::{self, Display};
 use std::str::FromStr;
 use std::time::Duration;
 
+use cosmic::Element;
 use cosmic::app::{Core, CosmicFlags, Task};
 use cosmic::cctk::sctk::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
+use cosmic::iced::Subscription;
 use cosmic::iced::event::listen_raw;
-use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::keyboard::Key;
+use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::runtime::core::event::wayland::LayerEvent;
 use cosmic::iced::runtime::core::event::{PlatformSpecific, wayland};
 use cosmic::iced::runtime::core::layout::Limits;
@@ -22,12 +24,10 @@ use cosmic::iced::runtime::platform_specific::wayland::layer_surface::{
     IcedMargin, IcedOutput, SctkLayerSurfaceSettings,
 };
 use cosmic::iced::widget::{operation, scrollable::RelativeOffset};
-use cosmic::iced::Subscription;
 use cosmic::surface::action::{LiveSettings, app_layer_shell, destroy_layer_shell};
 use cosmic::surface::surface_task;
 use cosmic::widget::container;
 use cosmic::widget::space::vertical as vertical_space;
-use cosmic::Element;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
@@ -46,11 +46,11 @@ const DOUBLE_CLICK: std::time::Duration = std::time::Duration::from_millis(450);
 
 /// Id da lista rolável, para manter o item focado visível.
 pub static SCROLL_ID: std::sync::LazyLock<cosmic::widget::Id> =
-    std::sync::LazyLock::new(|| cosmic::widget::Id::new("transferencia-list"));
+    std::sync::LazyLock::new(|| cosmic::widget::Id::new("clipdeck-list"));
 
 /// Id do painel de prévia, para rolar com PageUp/PageDown.
 pub static PREVIEW_ID: std::sync::LazyLock<cosmic::widget::Id> =
-    std::sync::LazyLock::new(|| cosmic::widget::Id::new("transferencia-preview"));
+    std::sync::LazyLock::new(|| cosmic::widget::Id::new("clipdeck-preview"));
 
 /// O que fazer ao subir/ativar a instância.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,7 +109,9 @@ pub enum Message {
     InputChanged(String),
     /// Um clique: seleciona e mostra a prévia (dois cliques colam).
     SelectIndex(usize),
-    ActivateFocused { plain: bool },
+    ActivateFocused {
+        plain: bool,
+    },
     RemoveFocused,
     TogglePinFocused,
     FocusNext,
@@ -177,9 +179,9 @@ impl App {
                     .items
                     .iter()
                     .map(|item| {
-                        item.thumb.as_ref().map(|bytes| {
-                            cosmic::widget::image::Handle::from_bytes(bytes.clone())
-                        })
+                        item.thumb
+                            .as_ref()
+                            .map(|bytes| cosmic::widget::image::Handle::from_bytes(bytes.clone()))
                     })
                     .collect();
                 if self.focused >= self.items.len() {
@@ -227,7 +229,7 @@ impl App {
                 anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
                 input_zone: None,
                 output: IcedOutput::Active,
-                namespace: "transferencia".to_string(),
+                namespace: "clipdeck".to_string(),
                 size: None,
                 exclusive_zone: -1,
                 margin: IcedMargin::default(),
@@ -275,7 +277,11 @@ impl App {
     }
 
     fn toggle(&mut self) -> Task<Message> {
-        if self.visible { self.hide() } else { self.show() }
+        if self.visible {
+            self.hide()
+        } else {
+            self.show()
+        }
     }
 
     /// Um clique: seleciona (a prévia acompanha) sem colar.
@@ -313,9 +319,9 @@ impl App {
     /// cola.
     fn clicked(&mut self, index: usize) -> Task<Message> {
         let now = std::time::Instant::now();
-        let double = self
-            .last_click
-            .is_some_and(|(previous, at)| previous == index && now.duration_since(at) < DOUBLE_CLICK);
+        let double = self.last_click.is_some_and(|(previous, at)| {
+            previous == index && now.duration_since(at) < DOUBLE_CLICK
+        });
         self.last_click = Some((index, now));
         if double {
             tracing::debug!("duplo clique: colando o item {index}");
@@ -351,7 +357,11 @@ impl App {
             self.status = Some(format!("não deu para copiar: {err}"));
             return Task::none();
         }
-        tracing::debug!("item {} ({label}) no clipboard em {:?}", item.id, started.elapsed());
+        tracing::debug!(
+            "item {} ({label}) no clipboard em {:?}",
+            item.id,
+            started.elapsed()
+        );
 
         let task = self.hide();
         if self.cfg.auto_paste {
@@ -432,7 +442,7 @@ impl cosmic::Application for App {
     fn init(mut core: Core, flags: Flags) -> (Self, Task<Message>) {
         let Flags { action, cfg, db } = flags;
         let mut status = None;
-        info!("transferencia iniciado em modo {action}");
+        info!("clipdeck iniciado em modo {action}");
         // Como o cosmic-launcher: superfície de sistema, para o tema aplicar a
         // regra de vidro (`frosted_system_interface`) às nossas superfícies.
         core.set_app_type(cosmic::core::AppType::System);
@@ -566,7 +576,9 @@ impl cosmic::Application for App {
             return view::overlay(view::popup(
                 &self.items,
                 &self.thumb_handles,
-                self.preview_handle.as_ref().and_then(|(_, handle)| handle.as_ref()),
+                self.preview_handle
+                    .as_ref()
+                    .and_then(|(_, handle)| handle.as_ref()),
                 &self.query,
                 self.focused,
                 self.status.as_deref(),
@@ -586,9 +598,7 @@ impl cosmic::Application for App {
             cosmic::iced::Event::Window(WindowEvent::Opened { size, .. }) => {
                 Some(Message::Resized(size))
             }
-            cosmic::iced::Event::Window(WindowEvent::Resized(size)) => {
-                Some(Message::Resized(size))
-            }
+            cosmic::iced::Event::Window(WindowEvent::Resized(size)) => Some(Message::Resized(size)),
             cosmic::iced::Event::PlatformSpecific(PlatformSpecific::Wayland(
                 wayland::Event::Layer(event, _, id),
             )) => Some(Message::Layer(event, id)),

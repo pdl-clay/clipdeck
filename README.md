@@ -1,142 +1,221 @@
-# transferencia
+<div align="center">
 
-Histórico da área de transferência nativo para o COSMIC: **Super+V** abre uma lista
-centralizada dos itens copiados, com busca, navegação por teclado, pins e colagem
-direta no aplicativo em foco.
+# clipdeck
 
-Escrito em Rust. Sem daemon de terceiros, sem serviço externo, sem rede.
+**Clipboard history for the COSMIC desktop.**
+Press <kbd>Super</kbd>+<kbd>V</kbd>, search what you copied, paste it straight into the app you were using.
 
-## Requisitos
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![rust](https://img.shields.io/badge/rust-1.93%2B-orange.svg)
+![wayland](https://img.shields.io/badge/wayland-only-purple.svg)
 
-- COSMIC (testado no 1.8.0). O compositor precisa expor
-  `zwlr_data_control_manager_v1`, `zwlr_layer_shell_v1` e
-  `zwp_virtual_keyboard_manager_v1` — o `transferencia doctor` confere.
-- Rust 1.93+ só para compilar.
+[English](README.md) · [Português](README.pt-BR.md)
 
-## Instalação
+</div>
+
+---
+
+![clipdeck popup](docs/screenshot.png)
+
+## Why
+
+COSMIC is a great desktop, but it has no clipboard history. Copy something, want it
+back three steps later, and it's gone — only the current selection survives.
+
+Other Wayland desktops solve this with a separate clipboard daemon. clipdeck does it
+natively, as a single Rust binary:
+
+- **No third-party daemon, no service, no network.**
+- **Watches the clipboard without needing focus**, via
+  `zwlr_data_control_manager_v1`.
+- **Pastes into the app you were already using**, by injecting the paste key through
+  the compositor's virtual keyboard.
+- **Follows the COSMIC theme**, including the frosted-glass mode.
+
+## Features
+
+- <kbd>Super</kbd>+<kbd>V</kbd> popup with full-text search (accent- and
+  case-insensitive, prefix matching)
+- Keyboard-first: arrows/Tab to move, <kbd>Enter</kbd> to paste, no mouse required
+- Pin items so they survive the history limit
+- Rich previews: images at full size, text and files inline, HTML stripped to plain text
+- HTML items are offered as **both** `text/html` and `text/plain`, so pasting into a
+  text field or terminal gives clean text, not markup
+- Deduplicated by SHA-256 — copying the same thing twice moves the item to the top
+  instead of duplicating it
+- Respects `x-kde-passwordManagerHint: secret`, so password managers are never recorded
+- SQLite history that survives reboots, with size and count caps
+- A full CLI for scripting and `doctor` for diagnosing setup problems
+
+## Requirements
+
+- **COSMIC** (tested on 1.8.0) on Wayland
+- The compositor must expose `zwlr_data_control_manager_v1`, `zwlr_layer_shell_v1`
+  and `zwp_virtual_keyboard_manager_v1` — run `clipdeck doctor` to check
+- Dynamically linked against glibc (built and tested on CachyOS / Arch)
+
+## Install
 
 ```sh
-cargo build --release
-install -Dm755 target/release/transferencia ~/.local/bin/transferencia
-transferencia install
+curl -fsSL https://raw.githubusercontent.com/pdl-clay/clipdeck/main/install.sh | bash
 ```
 
-`install` faz três coisas: grava o autostart do daemon
-(`~/.config/autostart/com.pdl.Transferencia.desktop`), adiciona o atalho Super+V no
-arquivo de atalhos do COSMIC (com backup `custom.bak-<epoch>` ao lado) e sobe o
-daemon agora, sem esperar logout.
+That downloads the latest release, verifies its checksum, installs the binary to
+`~/.local/bin`, registers the autostart entry and adds the <kbd>Super</kbd>+<kbd>V</kbd>
+shortcut. It prints what it did and where.
 
-Se preferir não deixar o programa mexer no arquivo de atalhos, adicione à mão em
-**Ajustes → Teclado → Atalhos personalizados**: comando `transferencia --toggle`,
-tecla `Super+V`.
+If you'd rather point at a specific version, or skip the shortcut registration:
 
-## Uso
+```sh
+curl -fsSL https://raw.githubusercontent.com/pdl-clay/clipdeck/main/install.sh | bash -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/pdl-clay/clipdeck/main/install.sh | bash -s -- --no-setup
+```
 
-| Ação | Resultado |
+### From source
+
+You need Rust 1.93+ and the Wayland development headers:
+
+```sh
+# Arch / CachyOS
+sudo pacman -S --needed base-devel wayland libxkbcommon libinput seat
+
+# Debian / Ubuntu
+sudo apt install build-essential pkg-config libwayland-dev libxkbcommon-dev libinput-dev libseat-dev
+
+git clone https://github.com/pdl-clay/clipdeck
+cd clipdeck
+cargo install --path . --locked
+clipdeck install
+```
+
+## Usage
+
+| Action | Result |
 |---|---|
-| 1 clique numa linha | seleciona e mostra a **prévia à direita** (não cola) |
-| 2 cliques na linha | cola o item e fecha |
-| clique fora do painel | fecha |
-| `Super+V` | abre/fecha o popup |
-| `↑` `↓` (ou `Tab`) | navega |
-| `Enter` | coloca o item no clipboard e cola no aplicativo anterior |
-| `Shift+Enter` | cola como texto puro (ignora a marcação de itens HTML) |
-| `Ctrl+P` | fixa/desfixa (itens fixados não saem pelo limite) |
-| `Delete` | remove o item |
-| `PageUp` `PageDown` | rolam o painel de prévia (textos grandes) |
-| `Esc` | fecha |
+| <kbd>Super</kbd>+<kbd>V</kbd> | open / close the popup |
+| Type | search the history |
+| <kbd>↑</kbd> <kbd>↓</kbd> or <kbd>Tab</kbd> | move between items |
+| <kbd>Enter</kbd> | put the item on the clipboard and paste it |
+| <kbd>Shift</kbd>+<kbd>Enter</kbd> | paste as plain text (ignores HTML markup) |
+| Click an item | select it and show the **preview** (does not paste) |
+| Double-click an item | paste it and close |
+| Click outside | close |
+| <kbd>Ctrl</kbd>+<kbd>P</kbd> | pin / unpin — pinned items never age out |
+| <kbd>Delete</kbd> | remove the item |
+| <kbd>PageUp</kbd> / <kbd>PageDown</kbd> | scroll long previews |
+| <kbd>Esc</kbd> | close |
 
-Itens HTML vão para o clipboard com `text/html` (a marcação) **e** `text/plain` (o
-texto): aplicativos que não entendem HTML — campo de texto, terminal, editor
-simples — recebem o texto limpo, não a marcação.
-
-O painel direito mostra a prévia do item selecionado: imagens em tamanho grande,
-texto/arquivos como conteúdo. A prévia acompanha as setas do teclado. Textos
-longos rolam com a roda do mouse, com a barra de rolagem ou com `PageUp`/`PageDown`
-(até 60 000 caracteres renderizados; acima disso o painel avisa quanto ficou fora).
+> The interface currently ships in Portuguese. Contributions to localise it are very
+> welcome.
 
 ## CLI
 
 ```sh
-transferencia list [--limit N] [--json]     # itens recentes
-transferencia search <termo>                # busca FTS (sem acento, por prefixo)
-transferencia copy <id> [--plain]           # devolve um item ao clipboard (fica um processo servindo)
-transferencia pin <id> | unpin <id>
-transferencia remove <id>
-transferencia clear [--keep-pinned] --yes
-transferencia status [--json]               # estado do banco e da configuração
-transferencia doctor                        # checa protocolos, seleção, teclado virtual, atalho
-transferencia key ctrl+v | super+v | up | down | enter | escape | delete | tab
-transferencia install | uninstall [--purge]
+clipdeck list [--limit N] [--json]   # recent items
+clipdeck search <term>              # full-text search
+clipdeck copy <id> [--plain]        # put an item back on the clipboard
+clipdeck pin <id> | clipdeck unpin <id>
+clipdeck remove <id>
+clipdeck clear [--keep-pinned] --yes
+clipdeck status [--json]            # database and config state
+clipdeck doctor                     # diagnose protocols, shortcut, virtual keyboard
+clipdeck key ctrl+v | super+v | up | down | enter | escape | delete | tab
+clipdeck install | clipdeck uninstall [--purge]
 ```
 
-## Configuração — `~/.config/transferencia/config.toml`
+`clipdeck key` sends a key combination to the focused window without stealing focus —
+handy for scripting.
+
+## Configuration
+
+`~/.config/clipdeck/config.toml` — the file is optional; these are the defaults:
 
 ```toml
-max_items          = 500          # itens no histórico (fixados não contam)
-max_total_bytes    = 268435456    # teto somando tudo (256 MiB)
-max_item_bytes     = 20971520     # teto por item (20 MiB)
-max_text_bytes     = 1048576      # teto para texto (1 MiB)
-auto_paste         = true         # colar automaticamente após escolher
-paste_delay_ms     = 150          # espera para o foco voltar ao app anterior
-popup_width        = 1000
-popup_height       = 460
+max_items        = 500          # history length (pinned items don't count)
+max_total_bytes  = 268435456    # total cap across all items (256 MiB)
+max_item_bytes   = 20971520     # per-item cap (20 MiB)
+max_text_bytes   = 1048576      # cap for text content (1 MiB)
+auto_paste       = true         # paste automatically after picking
+paste_delay_ms   = 150          # wait for focus to return to the previous app
+popup_width      = 1000
+popup_height     = 460
 ```
 
-O arquivo é opcional: ausente, valem os padrões acima. Ajustes de popup e de
-colagem passam a valer na próxima abertura do popup; os limites de captura
-(`max_*`) valem a partir do próximo início do daemon.
+Popup and paste settings apply the next time the popup opens; the capture limits
+(`max_*`) apply from the next daemon start.
 
-## Como funciona
+## How it works
 
-- **Captura**: thread própria conectada ao Wayland via `zwlr_data_control_manager_v1`
-  (observa o clipboard sem precisar de foco). A cada nova seleção escolhe o melhor
-  tipo MIME disponível — `text/uri-list` → imagem → `text/html` (com o
-  `text/plain` companheiro) → texto — e grava no SQLite.
-- **Dedupe**: SHA-256 do conteúdo. Copiar de novo o mesmo conteúdo sobe o item para
-  o topo em vez de duplicar.
-- **Privacidade**: ofertas marcadas com `x-kde-passwordManagerHint: secret`
-  (gerenciadores de senha) não são gravadas. Nada sai da máquina.
-- **Popup**: instância única por ativação D-Bus. A janela é uma layer surface de
-  **tela cheia transparente**: o painel fica centralizado, o blur do tema é
-  aplicado só no retângulo do painel e o resto da superfície captura o clique de
-  fora (que fecha). Como a superfície cobre a saída, o ponteiro nunca sai dela —
-  o compositor não devolve o foco para outra janela no meio do uso do mouse.
-- **Aparência**: segue o tema do COSMIC, incluindo o modo vidro
-  (`frosted_system_interface`): fundo em `background(theme.transparent)` e blur
-  atrás do painel.
-- **Colagem**: a seleção é publicada pelo próprio transferencia
-  (`zwlr_data_control_manager_v1`), com um conteúdo por tipo MIME — item HTML
-  oferece a marcação em `text/html` e o texto em `text/plain`. Com `auto_paste`, um
-  Ctrl+V é injetado pelo teclado virtual do compositor depois que o popup fecha.
-  Se a injeção falhar, o item continua no clipboard — é só colar à mão. No popup
-  quem serve é o daemon; no `transferencia copy`, um processo em segundo plano, que
-  sai quando outro aplicativo copia algo (a seleção morre com quem a publica).
-- **Imagens**: miniatura de 256 px (lista) e prévia de 1024 px (painel direito) no
-  banco; o original em BLOB é o que vai para o clipboard. Imagens capturadas antes
-  do painel de prévia ganham a prévia na primeira vez que o daemon sobe.
+- **Capture** — a dedicated thread connects to Wayland through
+  `zwlr_data_control_manager_v1`, which observes the clipboard without focus. On each
+  new selection it picks the best available MIME type —
+  `text/uri-list` → image → `text/html` (with its `text/plain` companion) → text — and
+  writes it to SQLite.
+- **Dedupe** — SHA-256 of the content. Re-copying the same thing bumps it to the top.
+- **Popup** — one instance per D-Bus activation. The window is a transparent
+  full-screen `zwlr_layer_shell_v1` surface: the panel is centred, the theme's blur is
+  applied only to the panel rectangle, and the rest of the surface catches the
+  click-outside that closes it. Because the surface covers the output, the pointer never
+  leaves it, so the compositor can't hand focus to another window mid-interaction.
+- **Paste** — the selection is published by clipdeck itself through
+  `zwlr_data_control_manager_v1`, one content per MIME type. With `auto_paste`, a
+  <kbd>Ctrl</kbd>+<kbd>V</kbd> is injected via the compositor's virtual keyboard once the
+  popup closes. If injection fails the item stays on the clipboard — just paste by hand.
+- **Images** — a 256 px thumbnail for the list and a 1024 px preview for the side panel
+  are stored in the database; the original BLOB is what goes to the clipboard.
 
-## Dados
+## Privacy
 
-- Banco: `~/.local/share/transferencia/history.db` (SQLite em WAL, seguro para
-  vários processos: o daemon escreve, a CLI lê).
-- Config: `~/.config/transferencia/config.toml`
-- Autostart: `~/.config/autostart/com.pdl.Transferencia.desktop`
+- Everything stays on your machine. Nothing is sent anywhere.
+- Password-manager selections marked `x-kde-passwordManagerHint: secret` are never
+  recorded.
+- History lives in `~/.local/share/clipdeck/history.db` (SQLite in WAL mode). Delete it
+  any time with `clipdeck clear` or `clipdeck uninstall --purge`.
 
-## Limites conhecidos
+## Known limitations
 
-- Só o clipboard normal; a seleção primária (X11) não é observada.
-- O auto-paste injeta `Ctrl+V`; terminais costumam usar `Ctrl+Shift+V` — neles o
-  atalho do terminal cola, ou desligue `auto_paste` e cole à mão.
-- O auto-paste depende de o foco voltar ao aplicativo anterior; o `paste_delay_ms`
-  ajusta a espera para ambientes mais lentos.
-- Aplicativos que servem a seleção e morrem em seguida podem entregar conteúdo
-  vazio; nesse caso a cópia é ignorada (o `wl-clip-persist` resolve do lado do
-  sistema, se for o caso).
+- Regular clipboard only — the X11 primary selection is not observed.
+- Auto-paste injects <kbd>Ctrl</kbd>+<kbd>V</kbd>. Terminals usually use
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>, so use the terminal's own paste
+  shortcut there, or turn `auto_paste` off and paste manually.
+- Auto-paste depends on focus returning to the previous app; tune `paste_delay_ms` on
+  slower setups.
+- Apps that own the selection and exit immediately can hand over empty content. Those
+  copies are skipped — if that's your case, pair clipdeck with `wl-clip-persist`.
 
-## Desinstalar
+## Troubleshooting
 
 ```sh
-transferencia uninstall            # remove autostart e atalho, mantém o histórico
-transferencia uninstall --purge    # remove também o banco
+clipdeck doctor
 ```
+
+Checks the required Wayland protocols, whether the compositor will let clipdeck own the
+clipboard, virtual keyboard availability, the autostart entry and the
+<kbd>Super</kbd>+<kbd>V</kbd> shortcut.
+
+If the shortcut doesn't fire, note that the popup also closes on <kbd>Super</kbd>+<kbd>V</kbd>
+when it's already open. You can also bind it by hand in
+**Settings → Keyboard → Custom Shortcuts** with the command `clipdeck --toggle`.
+
+## Uninstall
+
+```sh
+clipdeck uninstall            # removes autostart and the shortcut, keeps history
+clipdeck uninstall --purge    # also deletes the database
+```
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+```sh
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo test --release
+```
+
+Tagged pushes (`v*`) build and publish release binaries through GitHub Actions.
+
+## License
+
+[MIT](LICENSE) © Luan Rhiston

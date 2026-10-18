@@ -78,14 +78,11 @@ pub fn choose(mimes: &[String]) -> Option<Choice> {
         });
     }
 
-    TEXT_MIMES
-        .iter()
-        .find(|mime| has(mime))
-        .map(|mime| Choice {
-            kind: Kind::Text,
-            primary: (*mime).to_string(),
-            companion: None,
-        })
+    TEXT_MIMES.iter().find(|mime| has(mime)).map(|mime| Choice {
+        kind: Kind::Text,
+        primary: (*mime).to_string(),
+        companion: None,
+    })
 }
 
 /// Conteúdo marcado como sensível por gerenciadores de senha
@@ -122,14 +119,19 @@ impl Payload {
                 _ => ("text/plain", text_parts(item.text.as_bytes())),
             },
             Kind::Files => {
-                let mut parts =
-                    vec![("text/uri-list".to_string(), Arc::new(item.text.as_bytes().to_vec()))];
+                let mut parts = vec![(
+                    "text/uri-list".to_string(),
+                    Arc::new(item.text.as_bytes().to_vec()),
+                )];
                 parts.extend(text_parts(item.text.as_bytes()));
                 ("text/uri-list", parts)
             }
             Kind::Image => {
                 let bytes = item.blob.clone().context("imagem sem dados no banco")?;
-                (item.mime.as_str(), vec![(item.mime.clone(), Arc::new(bytes))])
+                (
+                    item.mime.as_str(),
+                    vec![(item.mime.clone(), Arc::new(bytes))],
+                )
             }
         };
         Ok(Payload {
@@ -190,7 +192,10 @@ mod tests {
     fn html_traz_o_companion_de_texto() {
         let choice = choose(&mimes(&["text/html", "text/plain;charset=utf-8"])).unwrap();
         assert_eq!(choice.kind, Kind::Html);
-        assert_eq!(choice.companion.as_deref(), Some("text/plain;charset=utf-8"));
+        assert_eq!(
+            choice.companion.as_deref(),
+            Some("text/plain;charset=utf-8")
+        );
 
         let without = choose(&mimes(&["text/html"])).unwrap();
         assert_eq!(without.companion, None);
@@ -209,7 +214,10 @@ mod tests {
     #[test]
     fn oferta_sem_tipo_conhecido_e_ignorada() {
         assert_eq!(
-            choose(&mimes(&["chromium/x-internal-source-rfh-token", "application/xml"])),
+            choose(&mimes(&[
+                "chromium/x-internal-source-rfh-token",
+                "application/xml"
+            ])),
             None
         );
     }
@@ -249,9 +257,11 @@ mod tests {
 
     #[test]
     fn payload_de_texto_serve_o_mesmo_conteudo_em_todos_os_tipos() {
-        let payload =
-            Payload::for_item(&item(Kind::Text, "text/plain;charset=utf-8", "ação", None, None), false)
-                .unwrap();
+        let payload = Payload::for_item(
+            &item(Kind::Text, "text/plain;charset=utf-8", "ação", None, None),
+            false,
+        )
+        .unwrap();
         assert_eq!(payload.label(), "text/plain");
         let served = served(payload);
         assert_eq!(served.len(), TEXT_ALIASES.len());
@@ -277,15 +287,30 @@ mod tests {
 
     #[test]
     fn payload_de_html_plain_nao_oferece_marcacao() {
-        let item = item(Kind::Html, "text/html", "Bom dia", Some("<span>Bom dia</span>"), None);
+        let item = item(
+            Kind::Html,
+            "text/html",
+            "Bom dia",
+            Some("<span>Bom dia</span>"),
+            None,
+        );
         let served = served(Payload::for_item(&item, true).unwrap());
         assert!(!served.contains_key("text/html"));
-        assert_eq!(served.get("text/plain").map(String::as_str), Some("Bom dia"));
+        assert_eq!(
+            served.get("text/plain").map(String::as_str),
+            Some("Bom dia")
+        );
     }
 
     #[test]
     fn payload_de_arquivos_oferece_uri_list_e_o_mesmo_texto() {
-        let item = item(Kind::Files, "text/uri-list", "file:///home/pdl/nota.txt", None, None);
+        let item = item(
+            Kind::Files,
+            "text/uri-list",
+            "file:///home/pdl/nota.txt",
+            None,
+            None,
+        );
         let served = served(Payload::for_item(&item, false).unwrap());
         for mime in ["text/uri-list", "text/plain"] {
             assert_eq!(

@@ -25,6 +25,9 @@ fn preview_text(text: &str) -> (String, Option<usize>) {
 }
 
 /// Conteúdo da janela do popup: lista à esquerda e prévia à direita.
+// Os parâmetros são todos peças independentes do estado do popup (lista, busca,
+// foco, dimensões); agrupá-los num struct só indira a leitura.
+#[allow(clippy::too_many_arguments)]
 pub fn popup<'a>(
     items: &'a [Item],
     thumbs: &'a [Option<image::Handle>],
@@ -129,7 +132,10 @@ pub fn popup<'a>(
 }
 
 /// Prévia do item selecionado: imagem grande, ou o conteúdo em texto.
-fn preview_pane<'a>(item: Option<&'a Item>, preview: Option<&'a image::Handle>) -> Element<'a, Message> {
+fn preview_pane<'a>(
+    item: Option<&'a Item>,
+    preview: Option<&'a image::Handle>,
+) -> Element<'a, Message> {
     let Some(item) = item else {
         return container(text::caption("selecione um item"))
             .width(Length::Fill)
@@ -226,11 +232,7 @@ fn row<'a>(
     index: usize,
 ) -> Element<'a, Message> {
     let mut content: Vec<Element<'a, Message>> = Vec::with_capacity(5);
-    content.push(
-        text::caption(badge(item))
-            .width(Length::Fixed(48.0))
-            .into(),
-    );
+    content.push(text::caption(badge(item)).width(Length::Fixed(48.0)).into());
     if let Some(handle) = thumb {
         content.push(
             image(handle.clone())
@@ -256,12 +258,16 @@ fn row<'a>(
         disabled: Box::new(|theme| row_style(theme, false, false)),
     };
 
-    cosmic::widget::button::custom(cosmic::widget::row(content).spacing(8).align_y(Alignment::Center))
-        .width(Length::Fill)
-        .padding([6, 10])
-        .on_press(Message::SelectIndex(index))
-        .class(highlight)
-        .into()
+    cosmic::widget::button::custom(
+        cosmic::widget::row(content)
+            .spacing(8)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding([6, 10])
+    .on_press(Message::SelectIndex(index))
+    .class(highlight)
+    .into()
 }
 
 /// Fundo da linha: destacada quando é a linha focada; realce no hover.

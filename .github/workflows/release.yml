@@ -1,0 +1,152 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libxkbcommon-dev libwayland-dev libinput-dev \
+            libseat-dev libgbm-dev libgl1-mesa-dev libegl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --release
+
+  package:
+    name: package (${{ matrix.target }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libxkbcommon-dev libwayland-dev libinput-dev \
+            libseat-dev libgbm-dev libgl1-mesa-dev libegl1-mesa-dev \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Cross-linking needs the C runtime and pkg-config pointed at the target sysroot.
+      - name: Point pkg-config at the target sysroot
+        run: |
+          SYSROOT=/usr/${{ matrix.target }}
+          echo "PKG_CONFIG_SYSROOT_DIR=$SYSROOT" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$SYSROOT/lib/pkgconfig:$SYSROOT/share/pkgconfig" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_LIBDIR=$SYSROOT/lib/pkgconfig:$SYSROOT/share/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            cargo build --release --locked
+          else
+            CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+            AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar \
+            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+            cargo build --release --locked --target "${{ matrix.target }}"
+          fi
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          BIN=target/${{ matrix.target }}/release/clipdeck
+          [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ] && BIN=target/release/clipdeck
+          [ -x "$BIN" ] || { echo "binário não encontrado em $BIN"; exit 1; }
+
+          VERSION="${GITHUB_REF_NAME}"
+          [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && VERSION="${{ inputs.tag }}"
+          OUT="clipdeck-${VERSION}-linux-${{ matrix.arch }}"
+
+          mkdir -p "dist/${OUT}"
+          cp "$BIN" "dist/${OUT}/clipdeck"
+          chmod 0755 "dist/${OUT}/clipdeck"
+          cp README.md README.pt-BR.md LICENSE install.sh "dist/${OUT}/"
+
+          tar -czf "dist/${OUT}.tar.gz" -C dist "$OUT"
+          (cd dist && sha256sum "${OUT}.tar.gz" > "${OUT}.tar.gz.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+
+  publish:
+    name: publish release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write checksums file
+        run: |
+          cd dist
+          cat ./*.tar.gz.sha256 | sed 's#  .*/#  #' > checksums.tmp
+          mv checksums.tmp "clipdeck-${GITHUB_REF_NAME}-checksums.txt"
+          cat "clipdeck-${GITHUB_REF_NAME}-checksums.txt"
+          rm -f ./*.sha256
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: clipdeck ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          draft: true
+          files: |
+            dist/*.tar.gz
+            dist/*checksums.txt

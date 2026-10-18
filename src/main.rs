@@ -1,9 +1,9 @@
-//! transferencia — histórico da área de transferência com Super+V para COSMIC.
+//! clipdeck — histórico da área de transferência com Super+V para COSMIC.
 
 mod app;
 mod autostart;
-mod clipboard;
 mod cli;
+mod clipboard;
 mod config;
 mod db;
 mod paste;
@@ -38,8 +38,8 @@ fn main() -> ExitCode {
 }
 
 fn init_logging() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("warn,transferencia=info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,clipdeck=info"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)

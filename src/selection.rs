@@ -50,9 +50,9 @@ impl Server {
             .map_err(|err| anyhow!("lendo os globais do Wayland: {err}"))?;
         let qh = queue.handle();
 
-        let manager: ZwlrDataControlManagerV1 = globals
-            .bind(&qh, 1..=1, ())
-            .map_err(|err| anyhow!("compositor não oferece zwlr_data_control_manager_v1 ({err})"))?;
+        let manager: ZwlrDataControlManagerV1 = globals.bind(&qh, 1..=1, ()).map_err(|err| {
+            anyhow!("compositor não oferece zwlr_data_control_manager_v1 ({err})")
+        })?;
 
         let mut seats = Vec::new();
         globals.contents().with_list(|list| {
@@ -114,7 +114,7 @@ impl Server {
 pub fn spawn(payload: Payload) -> Result<()> {
     let server = Server::start(payload)?;
     std::thread::Builder::new()
-        .name("transferencia-selection".into())
+        .name("clipdeck-selection".into())
         .spawn(move || {
             if let Err(err) = server.run() {
                 tracing::warn!("servindo a seleção: {err:#}");

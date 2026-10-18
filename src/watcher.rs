@@ -108,7 +108,7 @@ pub fn connect(cfg: Config, db: Db) -> Result<Watcher> {
 pub fn spawn(cfg: Config, db: Db) -> Result<std::thread::JoinHandle<()>> {
     let watcher = connect(cfg, db)?;
     std::thread::Builder::new()
-        .name("transferencia-watcher".into())
+        .name("clipdeck-watcher".into())
         .spawn(move || watcher.run())
         .context("criando thread do watcher")
 }
@@ -164,7 +164,11 @@ impl Watcher {
         for entry in &mut self.state.seats {
             if entry.device.is_none() {
                 tracing::info!("watcher: recriando data device");
-                entry.device = Some(self.state.manager.get_data_device(&entry.seat, &qh, entry.seat.clone()));
+                entry.device = Some(self.state.manager.get_data_device(
+                    &entry.seat,
+                    &qh,
+                    entry.seat.clone(),
+                ));
             }
         }
     }
@@ -308,7 +312,7 @@ fn preview_image(bytes: &[u8]) -> Option<Vec<u8>> {
 /// Roda numa thread própria e não bloqueia nada.
 pub fn backfill_previews(mut db: Db) {
     std::thread::Builder::new()
-        .name("transferencia-preview".into())
+        .name("clipdeck-preview".into())
         .spawn(move || {
             let ids = match db.images_without_preview(500) {
                 Ok(ids) => ids,
@@ -346,12 +350,10 @@ pub fn strip_html(html: &str) -> String {
         match ch {
             '<' => in_tag = true,
             '>' => in_tag = false,
-            '&' if !in_tag => {
-                match entity_at(&mut chars) {
-                    Some(text) => out.push_str(&text),
-                    None => out.push('&'),
-                }
-            }
+            '&' if !in_tag => match entity_at(&mut chars) {
+                Some(text) => out.push_str(&text),
+                None => out.push('&'),
+            },
             _ if !in_tag => out.push(ch),
             _ => {}
         }
@@ -362,9 +364,9 @@ pub fn strip_html(html: &str) -> String {
 /// Lê uma entidade logo após o `&`, consumindo-a se for reconhecida.
 fn entity_at(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<String> {
     let mut name = String::new();
-    let mut lookahead = chars.clone();
+    let lookahead = chars.clone();
     let mut terminated = false;
-    while let Some(next) = lookahead.next() {
+    for next in lookahead {
         if next == ';' {
             terminated = true;
             break;
@@ -534,7 +536,10 @@ mod tests {
         }
         let mut encoded = Vec::new();
         source
-            .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
             .unwrap();
 
         let thumb = thumbnail(&encoded).expect("gera miniatura");
@@ -557,7 +562,10 @@ mod tests {
         }
         let mut encoded = Vec::new();
         source
-            .write_to(&mut std::io::Cursor::new(&mut encoded), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut encoded),
+                image::ImageFormat::Png,
+            )
             .unwrap();
 
         let preview = preview_image(&encoded).expect("gera prévia");

@@ -1,11 +1,17 @@
 [package]
-name = "transferencia"
+name = "clipdeck"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.93"
 license = "MIT"
-description = "Histórico da área de transferência com Super+V para COSMIC"
-repository = "https://github.com/pdl-clay/transferencia"
+description = "Native clipboard history for the COSMIC desktop: Super+V opens a searchable, keyboard-driven picker that pastes straight into the focused app"
+repository = "https://github.com/pdl-clay/clipdeck"
+homepage = "https://github.com/pdl-clay/clipdeck"
+documentation = "https://github.com/pdl-clay/clipdeck#readme"
+readme = "README.md"
+keywords = ["clipboard", "cosmic", "wayland", "linux", "clipboard-manager"]
+categories = ["gui", "os::linux-apis"]
+exclude = ["/docs/superpowers", "/target"]
 
 [dependencies]
 anyhow = "1"

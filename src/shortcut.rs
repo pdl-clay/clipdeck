@@ -48,7 +48,7 @@ fn entry(binary: &str) -> String {
 
 fn is_our_entry(unit: &str, binary: &str) -> bool {
     unit.contains(DESCRIPTION)
-        || (unit.contains(TOGGLE_ARG) && (unit.contains(binary) || unit.contains("transferencia")))
+        || (unit.contains(TOGGLE_ARG) && (unit.contains(binary) || unit.contains("clipdeck")))
 }
 
 /// Divide o conteúdo em três partes: prefixo (cabeçalho), entradas de nível 0 e
@@ -265,8 +265,7 @@ fn write_with_backup(path: &Path, original: &str, updated: &str) -> Result<Optio
     };
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("criando {}", parent.display()))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("criando {}", parent.display()))?;
     }
     // Escrita atômica: o cosmic-config observa o diretório.
     let tmp = path.with_extension("tmp");
@@ -309,14 +308,14 @@ mod tests {
     fn insere_entrada_preservando_as_existentes() {
         let (mut entries, prefix, suffix) = split_entries(AMOSTRA);
         assert_eq!(entries.len(), 2);
-        entries.push(entry("/usr/bin/transferencia"));
+        entries.push(entry("/usr/bin/clipdeck"));
         let updated = build(&entries, &prefix, &suffix);
 
         assert!(looks_well_formed(&updated));
         assert!(updated.contains("Spawn(\"alacritty\")"));
         assert!(updated.contains("Workspace(2)"));
         assert!(updated.contains("key: \"v\""));
-        assert!(updated.contains("Spawn(\"/usr/bin/transferencia --toggle\")"));
+        assert!(updated.contains("Spawn(\"/usr/bin/clipdeck --toggle\")"));
         assert_eq!(updated.matches(DESCRIPTION).count(), 1);
         // a entrada nova entra depois das existentes
         let alacritty = updated.find("alacritty").unwrap();
@@ -335,13 +334,13 @@ mod tests {
     #[test]
     fn instalacao_e_idempotente() {
         let (mut entries, prefix, suffix) = split_entries(AMOSTRA);
-        entries.push(entry("/usr/bin/transferencia"));
+        entries.push(entry("/usr/bin/clipdeck"));
         let once = build(&entries, &prefix, &suffix);
 
         let (entries_again, prefix_again, suffix_again) = split_entries(&once);
         let ours = entries_again
             .iter()
-            .filter(|e| is_our_entry(e, "/usr/bin/transferencia"))
+            .filter(|e| is_our_entry(e, "/usr/bin/clipdeck"))
             .count();
         assert_eq!(ours, 1, "entrada duplicaria na segunda chamada");
         let twice = build(&entries_again, &prefix_again, &suffix_again);
@@ -351,13 +350,13 @@ mod tests {
     #[test]
     fn remocao_restaura_o_conteudo_original() {
         let (mut entries, prefix, suffix) = split_entries(AMOSTRA);
-        entries.push(entry("/usr/bin/transferencia"));
+        entries.push(entry("/usr/bin/clipdeck"));
         let with_entry = build(&entries, &prefix, &suffix);
 
         let (entries, prefix, suffix) = split_entries(&with_entry);
         let kept: Vec<String> = entries
             .iter()
-            .filter(|e| !is_our_entry(e, "/usr/bin/transferencia"))
+            .filter(|e| !is_our_entry(e, "/usr/bin/clipdeck"))
             .cloned()
             .collect();
         let restored = build(&kept, &prefix, &suffix);
@@ -378,49 +377,49 @@ mod tests {
         let path = dir.path().join("custom");
         std::fs::write(&path, AMOSTRA).unwrap();
 
-        assert!(install_at(&path, "/antigo/transferencia").unwrap().changed);
-        assert!(is_installed_at(&path, "/antigo/transferencia"));
+        assert!(install_at(&path, "/antigo/clipdeck").unwrap().changed);
+        assert!(is_installed_at(&path, "/antigo/clipdeck"));
 
         assert!(
-            install_at(&path, "/usr/bin/transferencia").unwrap().changed,
+            install_at(&path, "/usr/bin/clipdeck").unwrap().changed,
             "troca de caminho precisa reescrever o atalho"
         );
         let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("Spawn(\"/usr/bin/transferencia --toggle\")"));
-        assert!(!content.contains("/antigo/transferencia"));
+        assert!(content.contains("Spawn(\"/usr/bin/clipdeck --toggle\")"));
+        assert!(!content.contains("/antigo/clipdeck"));
         assert_eq!(content.matches(DESCRIPTION).count(), 1);
         assert!(content.contains("Spawn(\"alacritty\")"), "antigas intactas");
 
         assert!(
-            !install_at(&path, "/usr/bin/transferencia").unwrap().changed,
+            !install_at(&path, "/usr/bin/clipdeck").unwrap().changed,
             "instalação repetida não muda nada"
         );
 
-        assert!(uninstall_at(&path, "/usr/bin/transferencia").unwrap().changed);
+        assert!(uninstall_at(&path, "/usr/bin/clipdeck").unwrap().changed);
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             AMOSTRA,
             "desinstalar devolve o arquivo original"
         );
-        assert!(!uninstall_at(&path, "/usr/bin/transferencia").unwrap().changed);
+        assert!(!uninstall_at(&path, "/usr/bin/clipdeck").unwrap().changed);
     }
 
     #[test]
     fn arquivo_ausente_e_criado_e_depois_limpo() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("custom");
-        assert!(!is_installed_at(&path, "/usr/bin/transferencia"));
+        assert!(!is_installed_at(&path, "/usr/bin/clipdeck"));
 
-        let outcome = install_at(&path, "/usr/bin/transferencia").unwrap();
+        let outcome = install_at(&path, "/usr/bin/clipdeck").unwrap();
         assert!(outcome.changed);
         assert!(outcome.backup.is_none(), "sem arquivo original, sem backup");
-        assert!(is_installed_at(&path, "/usr/bin/transferencia"));
+        assert!(is_installed_at(&path, "/usr/bin/clipdeck"));
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(looks_well_formed(&content));
         assert!(content.contains("key: \"v\""));
 
-        assert!(uninstall_at(&path, "/usr/bin/transferencia").unwrap().changed);
+        assert!(uninstall_at(&path, "/usr/bin/clipdeck").unwrap().changed);
         assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), "{\n}");
     }
 }
