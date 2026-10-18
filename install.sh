@@ -100,7 +100,7 @@ if curl -fsSL -o "${TMP}/${SHASUMS}" "${BASE}/${SHASUMS}" 2>/dev/null; then
     ok "checksum confere"
   else
     printf '  %s!%s %s não lista %s — seguindo sem conferir\n' \
-      "$c_dim" "$c_off" "$SHASUMS" "$TARBALL" "$c_off"
+      "$c_dim" "$c_off" "$SHASUMS" "$TARBALL"
   fi
 else
   printf '  %s!%s checksums não disponível neste release — seguindo sem conferir\n' "$c_dim" "$c_off"
@@ -122,11 +122,13 @@ install -m 0755 "${TMP}/${BIN_NAME}" "${BINDIR}/.${BIN_NAME}.new"
 mv -f "${BINDIR}/.${BIN_NAME}.new" "${BINDIR}/${BIN_NAME}"
 ok "instalado em ${BINDIR}/${BIN_NAME}"
 
-case ":${PATH}:" in
-  *":${BINDIR}:"*) ;;
-  *) printf '  %s!%s %s não está no seu PATH — adicione:\n     export PATH="%s:$PATH"\n' \
-       "$c_dim" "$c_off" "$BINDIR" "$BINDIR" ;;
-esac
+if [[ ":${PATH}:" != *":${BINDIR}:"* ]]; then
+  # O $PATH na linha abaixo é impresso literalmente: é a linha que o usuário copia
+  # para o shell dele, não algo para expandir aqui.
+  # shellcheck disable=SC2016
+  printf '  %s!%s %s não está no seu PATH — adicione:\n     export PATH="%s:$PATH"\n' \
+    "$c_dim" "$c_off" "$BINDIR" "$BINDIR"
+fi
 
 # --- autostart + atalho ----------------------------------------------------
 if [ "$DO_SETUP" -eq 1 ]; then
