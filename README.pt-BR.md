@@ -58,6 +58,9 @@ forma nativa, num binário Rust só:
   `zwp_virtual_keyboard_manager_v1` — o `clipdeck doctor` confere
 - Ligado dinamicamente contra glibc (compilado e testado no CachyOS / Arch)
 
+> Os binários dos releases são **x86_64** por enquanto. Em outras arquiteturas,
+> compile do código-fonte — funciona, só leva alguns minutos.
+
 ## Instalação
 
 ```sh

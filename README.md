@@ -54,6 +54,9 @@ natively, as a single Rust binary:
   and `zwp_virtual_keyboard_manager_v1` — run `clipdeck doctor` to check
 - Dynamically linked against glibc (built and tested on CachyOS / Arch)
 
+> Prebuilt release binaries are **x86_64** for now. On other architectures, build
+> from source — it works, it just takes a few minutes.
+
 ## Install
 
 ```sh

@@ -62,6 +62,12 @@ case "$(uname -m)" in
   aarch64|arm64) ARCH="aarch64" ;;
   *) die "arquitetura não suportada: $(uname -m) — compile do fonte com 'cargo install --git https://github.com/${REPO}'" ;;
 esac
+if [ "$ARCH" != "x86_64" ]; then
+  die "os binários dos releases são x86_64 por enquanto (você está em ${ARCH}).
+     Compilando do código-fonte funciona:
+       cargo install --git https://github.com/${REPO} --locked
+     e depois:  clipdeck install"
+fi
 
 OS="$(uname -s)"
 [ "$OS" = "Linux" ] || die "clipdeck só roda em Linux (detectado: $OS)"
