@@ -114,7 +114,11 @@ fi
 
 # --- extrai e instala ------------------------------------------------------
 tar -xzf "${TMP}/${TARBALL}" -C "$TMP"
-[ -f "${TMP}/${BIN_NAME}" ] || die "o tarball não trouxe o executável ${BIN_NAME}"
+
+# O tarball traz tudo dentro de um diretório versionado; procura o binário em vez
+# de assumir a raiz, para o script não quebrar se a embalagem mudar.
+BIN_SRC="$(find "$TMP" -maxdepth 2 -type f -name "$BIN_NAME" -perm -u+x -print -quit)"
+[ -n "$BIN_SRC" ] || die "o tarball não trouxe o executável ${BIN_NAME}"
 
 if [ "$ASSUME_YES" -eq 0 ] && [ -t 0 ]; then
   printf '\nInstalar %s em %s? [Y/n] ' "$BIN_NAME" "$BINDIR"
@@ -124,7 +128,7 @@ fi
 
 mkdir -p "$BINDIR"
 # Instala por rename para nunca deixar um binário meio escrito no PATH.
-install -m 0755 "${TMP}/${BIN_NAME}" "${BINDIR}/.${BIN_NAME}.new"
+install -m 0755 "$BIN_SRC" "${BINDIR}/.${BIN_NAME}.new"
 mv -f "${BINDIR}/.${BIN_NAME}.new" "${BINDIR}/${BIN_NAME}"
 ok "instalado em ${BINDIR}/${BIN_NAME}"
 
